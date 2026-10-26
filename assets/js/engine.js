@@ -237,7 +237,10 @@ export class Stage {
     const aspect = this.size.w / this.size.h;
     const tanV = Math.tan(THREE.MathUtils.degToRad(BASE_FOV / 2));
     const halfH = Math.atan(tanV * aspect);
-    const dV = r + (0.5 * 1.32) / tanV;               // 上下に UI 分の余白
+    // 上下の操作パネルを避けた範囲に収める
+    const { top, bottom } = this._padding();
+    const avail = Math.max(this.size.h * 0.35, this.size.h - top - bottom);
+    const dV = r + (0.5 * 1.06) / (tanV * avail / this.size.h);
     const dH = r / Math.sin(halfH / 1.12);             // 左右に少し余白
     return Math.max(dV, dH);
   }
@@ -254,12 +257,16 @@ export class Stage {
     this.panY = clamp(this.panY, -maxPan, maxPan);
     this.camera.position.set(0, this.panY, d);
     this.camera.lookAt(0, this.panY, 0);
-    this.camera.updateProjectionMatrix();
+    // 筒の中心を、上下の操作パネルの間の中央へずらす
+    const { top, bottom } = this._padding();
+    const { w, h } = this.size;
+    this.camera.setViewOffset(w, h, 0, -(top - bottom) / 2, w, h);
     this.dirty = true;
   }
 
   /** 画面上で 1 度回すのに必要なピクセル数（正面の表面が指に追従するように） */
   _pxPerDegree() {
+    if (this.mode === 'flat') return Math.max(0.01, (this.composite.width * this._flatFit() * this.flat.zoom) / 360);
     if (!this.gl || !this.radius) return 4;
     const tan = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
     const pxPerUnit = (this.size.h / 2) / ((this.dist - this.radius) * tan);
@@ -351,7 +358,12 @@ export class Stage {
       if (pts.size >= 2 && pinch) {
         const c = center();
         const z = pinch.zoom * (c.d / Math.max(pinch.d, 1));
-        if (this.mode === 'flat') { this._flatZoomAt(z, c.x, c.y); this._flatPan(c.x - pinch.x, c.y - pinch.y); }
+        if (this.mode === 'flat') {
+          this._flatZoomAt(z, c.x, c.y);
+          this.angle = mod360(this.angle - (c.x - pinch.x) / this._pxPerDegree());
+          this._flatPan(0, c.y - pinch.y);
+          this.opts.onAngle?.(this.angle);
+        }
         else { this.zoom = clamp(z, ZOOM_MIN, ZOOM_MAX); this._updateCamera(); }
         pinch.x = c.x; pinch.y = c.y;
         moved += 10;
@@ -361,12 +373,13 @@ export class Stage {
       const dx = e.clientX - last.x, dy = e.clientY - last.y;
       last = { x: e.clientX, y: e.clientY };
       moved += Math.abs(dx) + Math.abs(dy);
-      if (this.mode === 'flat') { this._flatPan(dx, dy); return; }
       const dDeg = -dx / this._pxPerDegree();
       this.angle = mod360(this.angle + dDeg);
       hist.push({ t: performance.now(), d: dDeg });
       if (hist.length > 6) hist.shift();
-      if (dy && this.zoom > 1) {
+      if (this.mode === 'flat') {
+        if (dy) this._flatPan(0, dy);
+      } else if (dy && this.zoom > 1) {
         const tan = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
         this.panY += dy * ((this.dist - this.radius) * tan) / (this.size.h / 2);
         this._updateCamera();
@@ -381,7 +394,7 @@ export class Stage {
       if (pts.size < 2) pinch = null;
       if (pts.size === 1) { const p = [...pts.values()][0]; last = { ...p }; return; }
       last = null;
-      if (this.mode === 'cylinder' && hist.length > 1) {
+      if (hist.length > 1) {
         const now = performance.now();
         const recent = hist.filter((h) => now - h.t < 90);
         if (recent.length > 1) {
@@ -402,8 +415,8 @@ export class Stage {
     el.addEventListener('wheel', (e) => {
       e.preventDefault();
       const f = Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015));
-      if (this.mode === 'flat') this._flatZoomAt(this.flat.zoom * f, e.clientX, e.clientY);
-      else if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) { this.rotateBy(e.deltaX / this._pxPerDegree()); }
+      if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) { this.rotateBy(e.deltaX / this._pxPerDegree()); }
+      else if (this.mode === 'flat') this._flatZoomAt(this.flat.zoom * f, e.clientX, e.clientY);
       else { this.zoom = clamp(this.zoom * f, ZOOM_MIN, ZOOM_MAX); this._updateCamera(); }
       this.opts.onInteract?.();
     }, { passive: false });
@@ -426,14 +439,22 @@ export class Stage {
     const py = cy - rect.top - this._flatCenterY() - this.flat.y;
     const nz = clamp(z, 0.5, 12);
     const k = nz / this.flat.zoom;
-    this.flat.x -= px * (k - 1);
-    this.flat.y -= py * (k - 1);
+    // 横方向は枠の中で画像が回り込むので、カーソル下の位置を保つよう角度をずらす
+    const before = this._pxPerDegree();
     this.flat.zoom = nz;
+    const after = this._pxPerDegree();
+    this.angle = mod360(this.angle + px / before - px / after);
+    this.flat.y -= py * (k - 1);
+    this.opts.onAngle?.(this.angle);
     this._flatClamp();
     this.dirty = true;
   }
 
   _flatPan(dx, dy) { this.flat.x += dx; this.flat.y += dy; this._flatClamp(); this.dirty = true; }
+
+  _padding() {
+    return { top: this.opts.flatPadding?.top ?? 110, bottom: this.opts.flatPadding?.bottom ?? 90 };
+  }
 
   _flatCenterY() {
     const top = this.opts.flatPadding?.top ?? 110;
@@ -444,9 +465,8 @@ export class Stage {
   _flatClamp() {
     const c = this.composite;
     const s = this._flatFit() * this.flat.zoom;
-    const mx = Math.max(0, (c.width * s - this.size.w) / 2 + 40);
     const my = Math.max(0, (c.height * s - this.size.h) / 2 + 60);
-    this.flat.x = clamp(this.flat.x, -mx, mx);
+    this.flat.x = 0; // 横は画像が回り込むため枠は常に中央
     this.flat.y = clamp(this.flat.y, -my, my);
   }
 
@@ -459,10 +479,24 @@ export class Stage {
     if (!c.width) return;
     const s = this._flatFit() * this.flat.zoom;
     const w = c.width * s, h = c.height * s;
-    const x = this.size.w / 2 - w / 2 + this.flat.x;
+    const x = this.size.w / 2 - w / 2;
     const y = this._flatCenterY() - h / 2 + this.flat.y;
+    // 正面（angle）が枠の中央に来るように横へずらし、左右をつなげて描く（angle=180 で元の画像のまま）
+    const shift = (((this.angle - 180) / 360) % 1 + 1) % 1 * w;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(Math.max(0, x), y, Math.min(this.size.w, x + w) - Math.max(0, x), h);
+    ctx.clip();
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(c, x, y, w, h);
+    const start = x - shift;
+    const first = start + Math.floor((Math.max(0, x) - start) / w) * w;
+    // つなぎ目に隙間ができないよう、タイルの境目を実ピクセルにそろえる
+    const snap = (v) => Math.round(v * dpr) / dpr;
+    for (let tx = first; tx < Math.min(this.size.w, x + w); tx += w) {
+      const a = snap(tx);
+      ctx.drawImage(c, a, y, snap(tx + w) - a, h);
+    }
+    ctx.restore();
   }
 
   /* ---------- ループ ---------- */
@@ -471,7 +505,6 @@ export class Stage {
     const flat = this.mode === 'flat';
     this.el.classList.toggle('is-flat', flat);
     this.el.classList.toggle('is-cylinder', !flat);
-    this.velocity = 0;
     this.dirty = true;
   }
 
@@ -494,7 +527,7 @@ export class Stage {
   _tick(t) {
     const dt = Math.min(64, t - this._last);
     this._last = t;
-    if (this.mode === 'cylinder') {
+    {
       let changed = false;
       if (this.autoRotate) { this.angle = mod360(this.angle + this.rotateSpeed * dt / 1000); changed = true; }
       if (Math.abs(this.velocity) > 0.0005) {

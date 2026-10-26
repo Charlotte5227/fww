@@ -349,7 +349,6 @@ function bindInputs() {
   $('#startAngle').addEventListener('input', (e) => {
     c().display.startAngle = Number(e.target.value);
     renderOutputs();
-    stage.setMode('cylinder');
     stage.setAngle(c().display.startAngle);
     markDirty();
   });
@@ -623,7 +622,7 @@ async function main() {
     flatPadding: { top: 16, bottom: 16 },
     onMode: (mode) => {
       document.querySelectorAll('.seg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
-      $('#previewNote').textContent = mode === 'flat' ? 'プレビュー（ドラッグで移動）' : 'プレビュー（ドラッグで回転）';
+      $('#previewNote').textContent = mode === 'flat' ? 'プレビュー（左右にドラッグで回り込み）' : 'プレビュー（ドラッグで回転）';
     },
     onState: (s) => {
       if (s === 'empty') $('#previewNote').textContent = '画像を追加するとここに表示されます';
