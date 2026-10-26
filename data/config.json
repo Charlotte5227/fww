@@ -14,6 +14,13 @@
       "opacity": 1
     },
     {
+      "id": "mvow7uta9qt8h",
+      "name": "地形",
+      "src": "data/images/mvow7ut9rwkum.png",
+      "visible": false,
+      "opacity": 1
+    },
+    {
       "id": "mvotd7pxsenwo",
       "name": "国家",
       "src": "data/images/mvotr6kxczti2.png",
