@@ -16,7 +16,7 @@
     {
       "id": "mvotd7pxsenwo",
       "name": "国家",
-      "src": "data/images/mvotd7pwaq2ba.png",
+      "src": "data/images/mvotr6kxczti2.png",
       "visible": true,
       "opacity": 1
     },
@@ -37,7 +37,7 @@
     {
       "id": "mvot8qaz85cmh",
       "name": "海域",
-      "src": "data/images/mvot8qax9j2b3.png",
+      "src": "data/images/mvotrezvhbpp4.png",
       "visible": false,
       "opacity": 1
     },
@@ -50,7 +50,7 @@
     }
   ],
   "background": {
-    "src": "",
+    "src": "data/images/mvotuoy3ulbtr.png",
     "color": "#141a2e",
     "fit": "cover"
   },
