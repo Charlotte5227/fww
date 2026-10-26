@@ -1,6 +1,6 @@
 // 管理サイト
-import { Stage } from './engine.js';
-import { GitHubClient, guessRepo } from './github.js';
+import { Stage } from './engine.js?v=20261026-3';
+import { GitHubClient, guessRepo } from './github.js?v=20261026-3';
 
 const $ = (s, el = document) => el.querySelector(s);
 const STORE_KEY = 'cylinder-viewer:github';

@@ -150,6 +150,111 @@ svg { display: block; }
 .chip input:focus-visible + .box { outline: 2px solid var(--brass-hi); outline-offset: 3px; }
 .chip.all { border-style: dashed; }
 
+button.chip { font: inherit; color: var(--paper); }
+.chip.tool svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.chip.tool .name { color: var(--paper); }
+.chip.tool[aria-expanded="true"] { background: var(--brass); border-color: var(--brass); color: var(--night); }
+.chip.tool[aria-expanded="true"] .name { color: var(--night); }
+
+/* ---------- 透明度パネル ---------- */
+.layer-panel {
+  position: absolute;
+  top: calc(var(--safe-t) + 118px);
+  left: calc(var(--safe-l) + 14px);
+  width: min(380px, calc(100vw - 28px - var(--safe-l) - var(--safe-r)));
+  max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - 210px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: rgba(20, 26, 46, .82);
+  border: 1px solid var(--glass-line);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .35);
+}
+.layer-panel[hidden] { display: none; }
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 4px 0 16px;
+}
+.panel-head h2 { margin: 0; font-size: 15px; font-weight: 700; }
+.panel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.prow {
+  display: grid;
+  grid-template-columns: minmax(0, 7.5em) minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 0 10px;
+  padding: 3px 0;
+  border-top: 1px solid rgba(238, 241, 246, .08);
+}
+.prow:first-child { border-top: 0; }
+.prow .chip-like {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  cursor: pointer;
+  position: relative;
+}
+.prow .chip-like input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.prow .box {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1.5px solid var(--mist);
+  display: grid;
+  place-items: center;
+}
+.prow .box svg { width: 14px; height: 14px; fill: none; stroke: var(--night); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; opacity: 0; }
+.prow input:checked + .box { background: var(--brass); border-color: var(--brass); }
+.prow input:checked + .box svg { opacity: 1; }
+.prow input:focus-visible + .box { outline: 2px solid var(--brass-hi); outline-offset: 3px; }
+.prow .name { color: var(--mist); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prow input:checked ~ .name { color: var(--paper); }
+.prow input[type="range"] {
+  width: 100%;
+  height: 32px;
+  margin: 0;
+  accent-color: var(--brass);
+  cursor: pointer;
+}
+.prow output { text-align: right; font-size: 13px; color: var(--paper); font-variant-numeric: tabular-nums; }
+.prow.is-off input[type="range"], .prow.is-off output { opacity: .45; }
+.panel-foot { padding: 6px 16px 12px; display: flex; justify-content: flex-end; }
+.text-btn {
+  border: 0;
+  background: none;
+  color: var(--brass-hi);
+  min-height: 36px;
+  padding: 0 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.text-btn:hover { text-decoration: underline; }
+
+/* スマホでは画面の下側に出し、地図の上半分が見えるようにする */
+@media (max-width: 600px) {
+  .layer-panel {
+    top: auto;
+    bottom: calc(var(--safe-b) + 78px);
+    max-height: 44dvh;
+  }
+  .panel-head { padding-left: 14px; }
+  .panel-list { padding: 0 14px; }
+  .prow { grid-template-columns: minmax(0, 6em) minmax(0, 1fr) 38px; gap: 0 8px; }
+  .panel-foot { padding: 2px 14px 8px; }
+}
+
 /* ---------- 下部コントロール ---------- */
 .controls {
   position: absolute;

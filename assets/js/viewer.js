@@ -1,6 +1,6 @@
 // 閲覧サイト
-import { Stage } from './engine.js';
-import { Dial } from './dial.js';
+import { Stage } from './engine.js?v=20261026-3';
+import { Dial } from './dial.js?v=20261026-3';
 
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
@@ -26,21 +26,86 @@ function onMode(mode) {
   modeBtns.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
 }
 
-function buildLayerChips() {
+const SLIDERS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>';
+
+function makeCheck() {
+  const box = document.createElement('span');
+  box.className = 'box';
+  box.innerHTML = CHECK;
+  return box;
+}
+
+/** 上部のチェック欄と透明度パネルをまとめて作る（両方の表示は常に同期） */
+function buildLayerUI() {
   const list = $('#layerList');
+  const panelList = $('#panelList');
+  const panel = $('#layerPanel');
   list.replaceChildren();
+  panelList.replaceChildren();
   // 管理画面と同じく「手前に重なるもの」から並べる
   const layers = [...(config.layers || [])].reverse();
   $('#layerbar').hidden = layers.length === 0;
   if (!layers.length) return;
 
-  const inputs = [];
+  const views = new Map(); // id -> { chip, panelCheck, range, out, row }
   let allInput = null;
+
   const syncAll = () => {
     if (!allInput) return;
-    const on = inputs.filter((i) => i.checked).length;
-    allInput.checked = on === inputs.length;
-    allInput.indeterminate = on > 0 && on < inputs.length;
+    const on = layers.filter((l) => stage.isLayerVisible(l.id)).length;
+    allInput.checked = on === layers.length;
+    allInput.indeterminate = on > 0 && on < layers.length;
+  };
+  const showVisible = (id) => {
+    const v = views.get(id);
+    const on = stage.isLayerVisible(id);
+    v.chip.checked = on;
+    v.panelCheck.checked = on;
+    v.row.classList.toggle('is-off', !on);
+  };
+  const showOpacity = (id) => {
+    const v = views.get(id);
+    const pct = Math.round(stage.getLayerOpacity(id) * 100);
+    v.range.value = pct;
+    v.out.textContent = `${pct}%`;
+  };
+  const setVisible = (id, on) => {
+    stage.setLayerVisible(id, on);
+    showVisible(id);
+    syncAll();
+  };
+
+  // 透明度パネルを開くボタン
+  const tool = document.createElement('button');
+  tool.type = 'button';
+  tool.className = 'chip tool';
+  tool.setAttribute('aria-expanded', 'false');
+  tool.setAttribute('aria-controls', 'layerPanel');
+  tool.innerHTML = `${SLIDERS}<span class="name">透明度</span>`;
+  list.append(tool);
+  // スマホでは下側に出るパネルを避けて、地図をその上の空いた範囲に表示する
+  const narrow = matchMedia('(max-width: 600px)');
+  const fitAroundPanel = () => {
+    if (!panel.hidden && narrow.matches) {
+      const r = panel.getBoundingClientRect();
+      stage.setPadding({ top: 110, bottom: Math.max(90, window.innerHeight - r.top + 8) });
+    } else {
+      stage.setPadding({ top: 110, bottom: 90 });
+    }
+  };
+  new ResizeObserver(fitAroundPanel).observe(panel);
+  narrow.addEventListener('change', fitAroundPanel);
+  const openPanel = (open) => {
+    panel.hidden = !open;
+    tool.setAttribute('aria-expanded', String(open));
+    if (open) hintEl.classList.add('is-gone');
+    fitAroundPanel();
+  };
+  tool.addEventListener('click', () => openPanel(panel.hidden));
+  $('#panelClose').onclick = () => { openPanel(false); tool.focus(); };
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !panel.hidden) { openPanel(false); tool.focus(); } });
+  $('#opacityReset').onclick = () => {
+    for (const l of layers) { stage.setLayerOpacity(l.id, null); showOpacity(l.id); }
   };
 
   const makeChip = (name, checked, onChange, extraClass = '') => {
@@ -50,28 +115,53 @@ function buildLayerChips() {
     input.type = 'checkbox';
     input.checked = checked;
     input.addEventListener('change', () => onChange(input.checked));
-    const box = document.createElement('span');
-    box.className = 'box';
-    box.innerHTML = CHECK;
     const span = document.createElement('span');
     span.className = 'name';
     span.textContent = name;
-    label.append(input, box, span);
+    label.append(input, makeCheck(), span);
     list.append(label);
     return input;
   };
 
   if (layers.length >= 2) {
-    allInput = makeChip('すべて', false, (on) => {
-      inputs.forEach((i) => { i.checked = on; i.dispatchEvent(new Event('change')); });
-    }, 'all');
+    allInput = makeChip('すべて', false, (on) => { for (const l of layers) setVisible(l.id, on); }, 'all');
   }
+
   for (const l of layers) {
-    const input = makeChip(l.name || '名前なし', stage.isLayerVisible(l.id), (on) => {
-      stage.setLayerVisible(l.id, on);
-      syncAll();
+    const name = l.name || '名前なし';
+    const chip = makeChip(name, stage.isLayerVisible(l.id), (on) => setVisible(l.id, on));
+
+    // パネルの行
+    const row = document.createElement('li');
+    row.className = 'prow';
+    const label = document.createElement('label');
+    label.className = 'chip-like';
+    const panelCheck = document.createElement('input');
+    panelCheck.type = 'checkbox';
+    panelCheck.addEventListener('change', () => setVisible(l.id, panelCheck.checked));
+    const nm = document.createElement('span');
+    nm.className = 'name';
+    nm.textContent = name;
+    label.append(panelCheck, makeCheck(), nm);
+    const range = document.createElement('input');
+    range.type = 'range';
+    range.min = '0';
+    range.max = '100';
+    range.step = '1';
+    range.setAttribute('aria-label', `${name}の不透明度`);
+    const out = document.createElement('output');
+    range.addEventListener('input', () => {
+      stage.setLayerOpacity(l.id, Number(range.value) / 100);
+      out.textContent = `${range.value}%`;
+      // 非表示のレイヤーを調整し始めたら表示する
+      if (!stage.isLayerVisible(l.id)) setVisible(l.id, true);
     });
-    inputs.push(input);
+    row.append(label, range, out);
+    panelList.append(row);
+
+    views.set(l.id, { chip, panelCheck, range, out, row });
+    showVisible(l.id);
+    showOpacity(l.id);
   }
   syncAll();
 }
@@ -124,7 +214,7 @@ async function main() {
   const disp = config.display || {};
 
   await stage.load(config);
-  buildLayerChips();
+  buildLayerUI();
   dial.set(stage.angle);
 
   if (!stage.gl) {

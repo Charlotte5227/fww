@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
-  <link rel="stylesheet" href="assets/css/stage.css">
-  <link rel="stylesheet" href="assets/css/viewer.css">
+  <link rel="stylesheet" href="assets/css/stage.css?v=20261026-3">
+  <link rel="stylesheet" href="assets/css/viewer.css?v=20261026-3">
 </head>
 <body>
   <main class="viewer" id="app">
@@ -33,6 +33,19 @@
       <div class="layer-list" id="layerList"></div>
     </nav>
 
+    <section class="layer-panel" id="layerPanel" aria-labelledby="layerPanelTitle" hidden>
+      <div class="panel-head">
+        <h2 id="layerPanelTitle">レイヤーの透明度</h2>
+        <button type="button" class="icon-btn" id="panelClose" aria-label="閉じる">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <ul class="panel-list" id="panelList"></ul>
+      <div class="panel-foot">
+        <button type="button" class="text-btn" id="opacityReset">透明度を元に戻す</button>
+      </div>
+    </section>
+
     <footer class="controls" id="controls">
       <button type="button" class="icon-btn" id="autoBtn" aria-pressed="false" aria-label="自動回転">
         <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>
@@ -50,6 +63,6 @@
     <div class="status" id="status" role="status"></div>
   </main>
   <noscript><p class="noscript">このページの表示には JavaScript が必要です。</p></noscript>
-  <script type="module" src="assets/js/viewer.js"></script>
+  <script type="module" src="assets/js/viewer.js?v=20261026-3"></script>
 </body>
 </html>

@@ -81,6 +81,7 @@ export class Stage {
     this.images = new ImageStore();
     this.config = null;
     this.visible = new Map();      // layerId -> boolean
+    this.opacity = new Map();      // layerId -> 閲覧者が変更した不透明度（0〜1）
     this.mode = 'cylinder';
     this.angle = 180;              // 正面に来ている画像上の位置（0〜360度＝画像の左端〜右端）
     this.velocity = 0;             // 慣性回転（度/ms）
@@ -127,6 +128,7 @@ export class Stage {
     if (!keepView) {
       this.angle = mod360(disp.startAngle ?? 180);
       this.visible.clear();
+      this.opacity.clear();
       this.zoom = 1; this.panY = 0; this.flat = { zoom: 1, x: 0, y: 0 };
     }
     for (const l of config.layers || []) {
@@ -144,9 +146,28 @@ export class Stage {
 
   setLayerVisible(id, on) {
     this.visible.set(id, !!on);
-    this._compose();
+    this._scheduleCompose();
   }
   isLayerVisible(id) { return this.visible.get(id) !== false; }
+
+  /** 閲覧側での不透明度の変更（null で管理ページの設定値に戻す） */
+  setLayerOpacity(id, value) {
+    if (value == null) this.opacity.delete(id);
+    else this.opacity.set(id, clamp(Number(value), 0, 1));
+    this._scheduleCompose();
+  }
+  getLayerOpacity(id) {
+    if (this.opacity.has(id)) return this.opacity.get(id);
+    const l = (this.config?.layers || []).find((x) => x.id === id);
+    return clamp(l?.opacity ?? 1, 0, 1);
+  }
+
+  /** スライダー操作などで連続して呼ばれても、合成は 1 フレームに 1 回だけ行う */
+  _scheduleCompose() {
+    if (this._composeQueued) return;
+    this._composeQueued = true;
+    requestAnimationFrame(() => { this._composeQueued = false; this._compose(); });
+  }
 
   setMode(mode) {
     if (mode !== 'cylinder' && mode !== 'flat') return;
@@ -184,6 +205,14 @@ export class Stage {
     this.zoom = 1; this.panY = 0;
     this.flat = { zoom: 1, x: 0, y: 0 };
     this._updateCamera();
+    this.dirty = true;
+  }
+
+  /** 上下の操作パネルの分の余白（px）を変える。筒・平面とも、残りの範囲の中央に収まる */
+  setPadding({ top, bottom }) {
+    this.opts.flatPadding = { top, bottom };
+    this._updateCamera();
+    this._flatClamp();
     this.dirty = true;
   }
 
@@ -302,7 +331,7 @@ export class Stage {
     if (baseImg) ctx.drawImage(baseImg, 0, 0, cw, ch);
     for (const { l, img } of layers) {
       if (!img || !this.isLayerVisible(l.id)) continue;
-      ctx.globalAlpha = clamp(l.opacity ?? 1, 0, 1);
+      ctx.globalAlpha = this.getLayerOpacity(l.id);
       ctx.drawImage(img, 0, 0, cw, ch);
     }
     ctx.globalAlpha = 1;
