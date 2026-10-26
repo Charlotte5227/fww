@@ -1,41 +1,62 @@
 {
   "version": 1,
-  "title": "夕暮れの山並み（サンプル）",
+  "title": "FWW世界地図",
   "base": {
-    "name": "下地",
-    "src": "data/images/sample-base.jpg"
+    "name": "無題410_修復済み2.2026.10.19-16.57_20261026142",
+    "src": "data/images/mvotcwawxfrke.png"
   },
   "layers": [
     {
-      "id": "sample-clouds",
-      "name": "雲",
-      "src": "data/images/sample-clouds.png",
+      "id": "mvot6b5uaznt5",
+      "name": "国家",
+      "src": "data/images/mvota01dqwemr.png",
       "visible": true,
       "opacity": 1
     },
     {
-      "id": "sample-lights",
-      "name": "町の灯り",
-      "src": "data/images/sample-lights.png",
+      "id": "mvotd7pxsenwo",
+      "name": "無題410_修復済み2.2026.10.19-16.57_20261026141",
+      "src": "data/images/mvotd7pwaq2ba.png",
       "visible": true,
       "opacity": 1
     },
     {
-      "id": "sample-compass",
-      "name": "方位",
-      "src": "data/images/sample-compass.png",
+      "id": "mvot6v5mca465",
+      "name": "プロビ",
+      "src": "data/images/mvot6v5mo3oo7.png",
+      "visible": true,
+      "opacity": 1
+    },
+    {
+      "id": "mvot7gdl4f53w",
+      "name": "空域",
+      "src": "data/images/mvot7gdlz2uoy.png",
       "visible": false,
+      "opacity": 1
+    },
+    {
+      "id": "mvot8qaz85cmh",
+      "name": "海域",
+      "src": "data/images/mvot8qax9j2b3.png",
+      "visible": false,
+      "opacity": 1
+    },
+    {
+      "id": "mvot9bwdj6nj4",
+      "name": "国名",
+      "src": "data/images/mvot9bwcx4v5m.png",
+      "visible": true,
       "opacity": 1
     }
   ],
   "background": {
-    "src": "data/images/sample-background.jpg",
+    "src": "",
     "color": "#141a2e",
     "fit": "cover"
   },
   "display": {
-    "defaultMode": "cylinder",
-    "autoRotate": true,
+    "defaultMode": "flat",
+    "autoRotate": false,
     "rotateSpeed": 6,
     "shading": 0.55,
     "startAngle": 180
