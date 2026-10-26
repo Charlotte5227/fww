@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "title": "夕暮れの山並み（サンプル）",
+  "base": {
+    "name": "下地",
+    "src": "data/images/sample-base.jpg"
+  },
+  "layers": [
+    {
+      "id": "sample-clouds",
+      "name": "雲",
+      "src": "data/images/sample-clouds.png",
+      "visible": true,
+      "opacity": 1
+    },
+    {
+      "id": "sample-lights",
+      "name": "町の灯り",
+      "src": "data/images/sample-lights.png",
+      "visible": true,
+      "opacity": 1
+    },
+    {
+      "id": "sample-compass",
+      "name": "方位",
+      "src": "data/images/sample-compass.png",
+      "visible": false,
+      "opacity": 1
+    }
+  ],
+  "background": {
+    "src": "data/images/sample-background.jpg",
+    "color": "#141a2e",
+    "fit": "cover"
+  },
+  "display": {
+    "defaultMode": "cylinder",
+    "autoRotate": true,
+    "rotateSpeed": 6,
+    "shading": 0.55,
+    "startAngle": 180
+  }
+}

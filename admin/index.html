@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#f3f4f7">
+  <title>管理｜筒ビューア</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+  <link rel="stylesheet" href="../assets/css/stage.css">
+  <link rel="stylesheet" href="../assets/css/admin.css">
+</head>
+<body>
+  <header class="head">
+    <p class="brand">筒ビューア <span>管理</span></p>
+    <a class="link" href="../" target="_blank" rel="noopener">閲覧ページを開く</a>
+  </header>
+
+  <div class="layout">
+    <!-- プレビュー -->
+    <section class="preview" aria-label="プレビュー">
+      <div class="preview-stage" id="pstage"></div>
+      <div class="preview-tools">
+        <div class="seg" role="group" aria-label="プレビューの表示方法">
+          <button type="button" data-mode="cylinder" aria-pressed="true">筒</button>
+          <button type="button" data-mode="flat" aria-pressed="false">平面</button>
+        </div>
+        <span class="preview-note" id="previewNote">プレビュー（ドラッグで回転）</span>
+      </div>
+    </section>
+
+    <div class="panels">
+      <!-- 公開先 -->
+      <section class="panel" id="ghPanel">
+        <h2>公開先（GitHub）</h2>
+        <div id="ghConnected" hidden>
+          <p class="gh-status"><span class="dot" aria-hidden="true"></span><span id="ghLabel"></span></p>
+          <div class="btns">
+            <button type="button" class="btn" id="ghReload">GitHub から読み込み直す</button>
+            <button type="button" class="btn ghost" id="ghDisconnect">接続を解除</button>
+          </div>
+        </div>
+        <form id="ghForm" class="form" autocomplete="off">
+          <p class="desc">ここで接続すると、「公開する」ボタンで GitHub のリポジトリに直接保存され、GitHub Pages の閲覧ページに反映されます。</p>
+          <div class="grid2">
+            <label class="field"><span>ユーザー名（またはOrganization）</span><input name="owner" required spellcheck="false" autocapitalize="off"></label>
+            <label class="field"><span>リポジトリ名</span><input name="repo" required spellcheck="false" autocapitalize="off"></label>
+          </div>
+          <label class="field"><span>ブランチ（空欄ならデフォルトブランチ）</span><input name="branch" placeholder="main" spellcheck="false" autocapitalize="off"></label>
+          <label class="field"><span>アクセストークン</span><input name="token" type="password" required spellcheck="false" autocapitalize="off" placeholder="github_pat_…"></label>
+          <label class="check"><input type="checkbox" name="remember" checked><span>このブラウザにトークンを保存する</span></label>
+          <details class="help">
+            <summary>トークンの作り方</summary>
+            <ol>
+              <li>GitHub の <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">Fine-grained token の作成ページ</a>を開きます。</li>
+              <li>「Repository access」で「Only select repositories」を選び、このサイトのリポジトリだけを選びます。</li>
+              <li>「Permissions」の「Contents」を「Read and write」にします。</li>
+              <li>作成したトークン（github_pat_ で始まる文字列）をここに貼り付けます。</li>
+            </ol>
+            <p>トークンはこのブラウザの中だけに保存され、GitHub 以外には送信されません。共用のパソコンでは「保存する」のチェックを外してください。</p>
+          </details>
+          <div class="btns"><button type="submit" class="btn primary">接続する</button></div>
+          <p class="form-msg" id="ghMsg" role="alert"></p>
+        </form>
+      </section>
+
+      <!-- 基本 -->
+      <section class="panel">
+        <h2>タイトル</h2>
+        <label class="field"><span>閲覧ページの上部に表示されます</span><input id="title" maxlength="80"></label>
+      </section>
+
+      <!-- 下地 -->
+      <section class="panel">
+        <h2>下地画像</h2>
+        <p class="desc">筒に巻き付けるいちばん下の画像です。左端と右端がつながって一周します。</p>
+        <div class="slot drop" id="baseSlot" data-drop="base"></div>
+      </section>
+
+      <!-- レイヤー -->
+      <section class="panel">
+        <h2>レイヤー</h2>
+        <p class="desc">下地の上に重ねる画像です。透過PNGがおすすめです。リストの上にあるものほど手前に重なります。下地と同じ縦横比の画像を使うと位置がそろいます。</p>
+        <ul class="layers" id="layerList"></ul>
+        <div class="adder drop" data-drop="layer">
+          <p>ここに画像をドロップ、または <kbd>Ctrl</kbd>+<kbd>V</kbd>／<kbd>⌘</kbd>+<kbd>V</kbd> で貼り付け</p>
+          <div class="btns">
+            <label class="btn primary file-btn">画像を選んで追加<input type="file" accept="image/*" multiple id="layerFiles"></label>
+            <button type="button" class="btn" id="pasteBtn" hidden>クリップボードから貼り付け</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 背景 -->
+      <section class="panel">
+        <h2>筒の背景</h2>
+        <p class="desc">筒表示のときだけ、筒の後ろに表示されます。</p>
+        <div class="slot drop" id="bgSlot" data-drop="background"></div>
+        <div class="grid2">
+          <label class="field"><span>背景色</span>
+            <span class="color"><input type="color" id="bgColor"><input id="bgColorText" maxlength="7" spellcheck="false"></span>
+          </label>
+          <label class="field"><span>背景画像の配置</span>
+            <select id="bgFit">
+              <option value="cover">画面いっぱいに広げる</option>
+              <option value="contain">全体が見えるように収める</option>
+              <option value="tile">タイル状に並べる</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <!-- 表示設定 -->
+      <section class="panel">
+        <h2>表示設定</h2>
+        <div class="grid2">
+          <label class="field"><span>開いたときの表示</span>
+            <select id="defaultMode">
+              <option value="cylinder">筒</option>
+              <option value="flat">平面</option>
+            </select>
+          </label>
+          <label class="check standalone"><input type="checkbox" id="autoRotate"><span>開いたときに自動で回転する</span></label>
+        </div>
+        <label class="field"><span>自動回転の速さ <output id="speedOut"></output></span><input type="range" id="rotateSpeed" min="1" max="30" step="1"></label>
+        <label class="field"><span>立体感（陰影の強さ） <output id="shadingOut"></output></span><input type="range" id="shading" min="0" max="1" step="0.05"></label>
+        <div class="field">
+          <span>開いたときの向き <output id="angleOut"></output></span>
+          <div class="row">
+            <input type="range" id="startAngle" min="0" max="359" step="1">
+            <button type="button" class="btn small" id="useAngle">プレビューの向きにする</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- その他 -->
+      <section class="panel">
+        <h2>GitHub を使わずに更新する</h2>
+        <p class="desc">設定と画像をまとめた ZIP をダウンロードできます。展開した <code>data</code> フォルダでリポジトリの <code>data</code> フォルダを置き換えると、同じ内容が公開されます。</p>
+        <div class="btns"><button type="button" class="btn" id="zipBtn">ZIP をダウンロード</button></div>
+      </section>
+    </div>
+  </div>
+
+  <footer class="publish">
+    <p class="publish-msg" id="publishMsg">変更はありません</p>
+    <button type="button" class="btn publish-btn" id="publishBtn" disabled>公開する</button>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <dialog class="progress" id="progress">
+    <p class="progress-title" id="progressTitle">公開しています</p>
+    <div class="bar"><span id="progressBar"></span></div>
+    <p class="progress-msg" id="progressMsg"></p>
+    <div class="btns end"><button type="button" class="btn" id="progressClose" hidden>閉じる</button></div>
+  </dialog>
+
+  <template id="slotTpl">
+    <div class="slot-body">
+      <div class="thumb"><img alt=""></div>
+      <div class="slot-meta"><strong></strong><small></small></div>
+      <div class="slot-actions">
+        <label class="btn small file-btn"><span>画像を選ぶ</span><input type="file" accept="image/*"></label>
+        <button type="button" class="btn small ghost danger" data-act="remove">外す</button>
+      </div>
+    </div>
+  </template>
+
+  <template id="layerTpl">
+    <li class="layer">
+      <div class="thumb"><img alt=""></div>
+      <div class="layer-main">
+        <input class="layer-name" aria-label="レイヤー名" maxlength="40">
+        <small class="layer-info"></small>
+        <small class="layer-warn" hidden></small>
+        <div class="layer-opts">
+          <label class="check"><input type="checkbox" data-k="visible"><span>最初から表示</span></label>
+          <label class="opacity"><span>不透明度</span><input type="range" min="0" max="1" step="0.05" data-k="opacity"></label>
+        </div>
+      </div>
+      <div class="layer-actions">
+        <button type="button" class="btn icon" data-act="up" aria-label="手前へ">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 14l6-6 6 6"/></svg>
+        </button>
+        <button type="button" class="btn icon" data-act="down" aria-label="奥へ">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10l6 6 6-6"/></svg>
+        </button>
+        <label class="btn icon file-btn" aria-label="画像を差し替え" title="画像を差し替え">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h11l-3-3M20 17H9l3 3"/></svg>
+          <input type="file" accept="image/*">
+        </label>
+        <button type="button" class="btn icon danger" data-act="remove" aria-label="削除" title="削除">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg>
+        </button>
+      </div>
+    </li>
+  </template>
+
+  <script src="../assets/vendor/jszip.min.js" defer></script>
+  <script type="module" src="../assets/js/admin.js"></script>
+</body>
+</html>

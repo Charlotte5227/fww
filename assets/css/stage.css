@@ -1,0 +1,29 @@
+/* 描画エリア（閲覧・管理で共用） */
+.cv-stage {
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  cursor: grab;
+  background: var(--stage-flat-bg, #1a2038);
+}
+.cv-stage:active { cursor: grabbing; }
+.cv-stage > canvas,
+.cv-stage > .cv-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.cv-bg {
+  background-position: center;
+  transition: opacity .35s ease;
+}
+.cv-stage.is-flat .cv-bg,
+.cv-stage.is-flat .cv-gl { opacity: 0; visibility: hidden; }
+.cv-stage.is-cylinder .cv-flat { visibility: hidden; }
+.cv-stage.is-flat .cv-flat {
+  background-color: var(--stage-flat-bg, #1a2038);
+}
