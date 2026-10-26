@@ -2,13 +2,13 @@
   "version": 1,
   "title": "FWW世界地図",
   "base": {
-    "name": "無題410_修復済み2.2026.10.19-16.57_20261026142",
-    "src": "data/images/mvotcwawxfrke.png"
+    "name": "無題410_修復済み2.2026.10.19-16.57_20261026144",
+    "src": "data/images/mvou7hswgwx70.png"
   },
   "layers": [
     {
       "id": "mvot6b5uaznt5",
-      "name": "国家",
+      "name": "白地",
       "src": "data/images/mvota01dqwemr.png",
       "visible": true,
       "opacity": 1
