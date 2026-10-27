@@ -2,10 +2,10 @@
   "version": 2,
   "entries": [
     {
-      "id": "mvqs4scbk6iqh",
+      "id": "mvqs7laxv9kb0",
       "date": "2026-10-27",
-      "time": "23:27",
-      "savedAt": "2026-10-27T14:27:15.706Z",
+      "time": "23:29",
+      "savedAt": "2026-10-27T14:29:26.552Z",
       "memo": "",
       "config": {
         "version": 1,
@@ -236,11 +236,11 @@
       }
     },
     {
-      "id": "2026-10-27",
+      "id": "mvqs4scbk6iqh",
       "date": "2026-10-25",
       "time": "02:19",
-      "savedAt": "2026-10-27T14:07:01.092Z",
-      "memo": "",
+      "savedAt": "2026-10-27T14:27:15.706Z",
+      "memo": "初期版",
       "config": {
         "version": 1,
         "title": "FWW世界地図",
@@ -294,7 +294,7 @@
           {
             "id": "mvot9bwdj6nj4",
             "name": "国名",
-            "src": "data/images/mvqrdyjosr4ip.png",
+            "src": "data/images/mvqs4czbrx407.png",
             "visible": true,
             "opacity": 1
           }
