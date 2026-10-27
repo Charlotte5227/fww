@@ -1,6 +1,6 @@
 # Discord の /地図 コマンドから起動され、地図を合成して投稿する
 name: Discord 地図
-run-name: "Discord 地図: ${{ inputs.date || '最新' }} ${{ inputs.label }}"
+run-name: "Discord 地図: ${{ inputs.label }}"
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ on:
         required: false
         default: ""
       date:
-        description: 日付（YYYY-MM-DD。空なら最新）
+        description: 履歴の記録（ID か YYYY-MM-DD。空なら最新）
         required: false
         default: ""
       label:
