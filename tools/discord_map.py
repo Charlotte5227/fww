@@ -16,7 +16,8 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 DISCORD_API = os.environ.get("DISCORD_API", "https://discord.com/api/v10")
-MAX_BYTES = 9_500_000  # Discord の添付上限（10MB）に余裕を持たせる
+MAX_BYTES = 7_900_000      # 1 枚の上限（ボットの添付は 1 ファイル 8MiB までのことがあるので余裕を持たせる）
+MAX_MESSAGE = 24_000_000   # 1 投稿の合計（Discord の上限 25MiB に余裕を持たせる）
 ALL_WORDS = {"すべて", "全部", "all"}
 
 
@@ -247,10 +248,10 @@ def main():
         if small:
             lines.append(f"（大きいため{''.join(small)}は縮小しています）")
 
-        # Discord の 1 投稿の上限（画像 10 枚・合計 10MB 程度）に収まるよう、必要なら投稿を分ける
+        # Discord の 1 投稿の上限（画像 10 枚・合計 25MiB）に収まるよう、必要なら投稿を分ける
         batches, cur, total = [], [], 0
         for im in images:
-            if cur and (total + len(im["data"]) > MAX_BYTES or len(cur) >= 10):
+            if cur and (total + len(im["data"]) > MAX_MESSAGE or len(cur) >= 10):
                 batches.append(cur)
                 cur, total = [], 0
             cur.append(im)
