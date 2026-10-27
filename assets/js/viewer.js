@@ -1,8 +1,8 @@
 // 閲覧サイト
-import { Stage } from './engine.js?v=20261027-2';
-import { Dial } from './dial.js?v=20261027-2';
-import { SaveMenu } from './save.js?v=20261027-2';
-import { History } from './history.js?v=20261027-2';
+import { Stage } from './engine.js?v=20261027-3';
+import { Dial } from './dial.js?v=20261027-3';
+import { SaveMenu } from './save.js?v=20261027-3';
+import { History } from './history.js?v=20261027-3';
 
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
@@ -230,7 +230,7 @@ async function showVersion(v, { initial = false } = {}) {
   setTitle(v);
   if (!initial) await stage.load(config, { keepView: true, syncVisible: false });
   buildLayerUI();
-  saveMenu?.setConfig(config, v.date || '');
+  saveMenu?.setConfig(config, v.date ? `${v.date}${v.time ? `_${v.time.replace(':', '')}` : ''}` : '');
 }
 
 function setupHint() {

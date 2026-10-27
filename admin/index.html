@@ -9,8 +9,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
-  <link rel="stylesheet" href="../assets/css/stage.css?v=20261027-2">
-  <link rel="stylesheet" href="../assets/css/admin.css?v=20261027-2">
+  <link rel="stylesheet" href="../assets/css/stage.css?v=20261027-3">
+  <link rel="stylesheet" href="../assets/css/admin.css?v=20261027-3">
 </head>
 <body>
   <header class="head">
@@ -139,13 +139,25 @@
       <!-- 履歴 -->
       <section class="panel" id="historyPanel">
         <h2>履歴</h2>
-        <p class="desc">公開した地図を日付ごとに残し、閲覧ページで過去の日付の地図を見られるようにします。同じ日に何度公開しても、その日の記録は最後の公開内容で上書きされます。</p>
-        <label class="check"><input type="checkbox" id="histRecord" checked><span>公開するときに、今日（<span id="histToday"></span>）の地図として履歴に残す</span></label>
-        <label class="field"><span>今日の記録のメモ（任意。例：第12ターン、停戦後）</span><input id="histMemo" maxlength="60"></label>
+        <p class="desc">公開した地図を記録として残し、閲覧ページや Discord で過去の地図を見られるようにします。1日に何回でも記録できます。</p>
+        <label class="check"><input type="checkbox" id="histRecord" checked><span>公開するときに履歴に残す</span></label>
+        <div class="hist-new" id="histNew">
+          <div class="grid2">
+            <label class="field"><span>記録の日付</span><input type="date" id="histDate" required></label>
+            <label class="field"><span>時刻（任意）</span><input type="time" id="histTime"></label>
+          </div>
+          <p class="field-note">変更しなければ、公開した日時になります。ゲーム内の日付などを入れてもかまいません。</p>
+          <div class="radios" role="radiogroup" aria-label="記録のしかた">
+            <label class="check"><input type="radio" name="histMode" value="add" checked><span>新しい記録として追加</span></label>
+            <label class="check"><input type="radio" name="histMode" value="replace"><span>直前に公開した記録を上書き<small class="radio-note" id="histReplaceTarget"></small><br><small class="radio-note">小さな修正のとき。日付・時刻を変更しなければ、記録の日付はそのままです</small></span></label>
+          </div>
+          <label class="field"><span>メモ（任意。例：第12ターン、停戦後）</span><input id="histMemo" maxlength="60"></label>
+        </div>
         <ul class="hist-list" id="histList"></ul>
-        <p class="hist-empty" id="histEmpty">まだ履歴はありません。次に公開すると、今日の地図が最初の記録になります。</p>
+        <p class="hist-empty" id="histEmpty">まだ履歴はありません。次に公開すると、最初の記録になります。</p>
         <div class="hist-import" id="histImport" hidden>
-          <p class="desc">これまでに管理ページから公開した地図は GitHub に残っています。そこから日付ごとの履歴を作れます（画像のアップロードはやり直しません）。</p>
+          <p class="desc">これまでに管理ページから公開した地図は GitHub に残っています。そこから履歴を作れます（画像のアップロードはやり直しません。同じ内容の記録は追加されません）。</p>
+          <label class="check"><input type="checkbox" id="histImportAll"><span>1日に何回か公開した日は、すべての公開を取り込む（オフなら各日の最後の公開だけ）</span></label>
           <div class="btns"><button type="button" class="btn" id="histImportBtn">これまでの公開から履歴を作る</button></div>
         </div>
       </section>
@@ -187,7 +199,7 @@
   <template id="histTpl">
     <li class="hist">
       <div class="hist-main">
-        <input type="date" class="hist-date" aria-label="日付">
+        <span class="hist-when"><input type="date" class="hist-date" aria-label="日付"><input type="time" class="hist-time" aria-label="時刻"></span>
         <input class="hist-memo" maxlength="60" placeholder="メモ（任意）" aria-label="メモ">
         <small class="hist-info"></small>
       </div>
@@ -232,6 +244,6 @@
   </template>
 
   <script src="../assets/vendor/jszip.min.js" defer></script>
-  <script type="module" src="../assets/js/admin.js?v=20261027-2"></script>
+  <script type="module" src="../assets/js/admin.js?v=20261027-3"></script>
 </body>
 </html>

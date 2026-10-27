@@ -10,8 +10,9 @@ function parts(date) {
   const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
   return { y, mo, d, w: '日月火水木金土'[new Date(y, mo - 1, d).getDay()] };
 }
-const longDate = (date) => { const p = parts(date); return p ? `${p.y}年${p.mo}月${p.d}日（${p.w}）` : date; };
-const shortDate = (date) => { const p = parts(date); return p ? `${p.mo}月${p.d}日` : date; };
+const longDate = (date, time = '') => { const p = parts(date); return `${p ? `${p.y}年${p.mo}月${p.d}日（${p.w}）` : date}${time ? ` ${time}` : ''}`; };
+const shortDate = (date, time = '') => { const p = parts(date); return `${p ? `${p.mo}月${p.d}日` : date}${time ? ` ${time}` : ''}`; };
+const entryKey = (e) => `${e.date} ${e.time || ''} ${e.savedAt || ''}`;
 
 // 設定の中身が同じかどうか（並び順に依存しない比較）
 function same(a, b) {
@@ -29,14 +30,21 @@ export class History {
     this.panel = $('#histPanel');
     this.list = $('#histList');
 
+    const used = new Set();
     const entries = (Array.isArray(file?.entries) ? file.entries : [])
       .filter((e) => e && ymd.test(e.date) && e.config)
-      .sort((a, b) => b.date.localeCompare(a.date));
+      .sort((a, b) => entryKey(b).localeCompare(entryKey(a)))
+      .map((e) => {
+        let id = String(e.id || e.date);
+        while (used.has(id)) id += '_';
+        used.add(id);
+        return { ...e, id, time: e.time || '' };
+      });
     // いちばん新しい記録が今の地図と同じなら、「最新」にその日付を添えて重複させない
     const top = entries[0] && same(entries[0].config, latest) ? entries.shift() : null;
     this.versions = [
-      { key: 'latest', date: '', config: latest, memo: top?.memo || '', since: top?.date || '' },
-      ...entries.map((e) => ({ key: e.date, date: e.date, config: e.config, memo: e.memo || '', long: longDate(e.date), short: shortDate(e.date) })),
+      { key: 'latest', date: '', config: latest, memo: top?.memo || '', since: top ? longDate(top.date, top.time) : '' },
+      ...entries.map((e) => ({ key: e.id, date: e.date, time: e.time, config: e.config, memo: e.memo || '', long: longDate(e.date, e.time), short: shortDate(e.date, e.time) })),
     ];
     this.current = this.versions[0];
 
@@ -62,9 +70,13 @@ export class History {
 
   get isOpen() { return !this.panel.hidden; }
 
+  /** ?v=記録のID、または ?date=日付（その日のいちばん新しい記録） */
   fromUrl() {
-    const d = new URLSearchParams(location.search).get('date');
-    return d ? this.versions.find((v) => v.date === d) : null;
+    const q = new URLSearchParams(location.search);
+    const id = q.get('v');
+    if (id) return this.versions.find((v) => v.key === id && v.date) || null;
+    const d = q.get('date');
+    return d ? this.versions.find((v) => v.date === d) || null : null;
   }
 
   /** 最初に表示する版（URL の ?date= を優先） */
@@ -111,7 +123,7 @@ export class History {
       main.textContent = v.date ? v.long : '最新の地図';
       const sub = document.createElement('small');
       sub.className = 'hmemo';
-      sub.textContent = v.date ? v.memo : [v.since ? `${longDate(v.since)}に公開` : '', v.memo].filter(Boolean).join('・');
+      sub.textContent = v.date ? v.memo : [v.since ? `${v.since}の記録` : '', v.memo].filter(Boolean).join('・');
       const tag = document.createElement('span');
       tag.className = 'htag';
       tag.textContent = v === this.current ? '表示中' : '';
@@ -131,7 +143,8 @@ export class History {
     this.renderChip();
     if (push) {
       const url = new URL(location.href);
-      if (v.date) url.searchParams.set('date', v.date); else url.searchParams.delete('date');
+      url.searchParams.delete('date');
+      if (v.date) url.searchParams.set('v', v.key); else url.searchParams.delete('v');
       history.pushState(null, '', url);
     }
     this.onSelect(v);

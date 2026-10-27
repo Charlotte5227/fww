@@ -1,6 +1,6 @@
 // 管理サイト
-import { Stage } from './engine.js?v=20261027-2';
-import { GitHubClient, guessRepo } from './github.js?v=20261027-2';
+import { Stage } from './engine.js?v=20261027-3';
+import { GitHubClient, guessRepo } from './github.js?v=20261027-3';
 
 const $ = (s, el = document) => el.querySelector(s);
 const STORE_KEY = 'cylinder-viewer:github';
@@ -74,17 +74,37 @@ const fmtDate = (ymd) => {
   return `${y}年${m}月${d}日（${w}）`;
 };
 
+const nowTime = (d = new Date()) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+const fmtEntry = (e) => `${fmtDate(e.date)}${e.time ? ` ${e.time}` : ''}`;
+// 新しい記録が先。同じ日付は時刻、時刻もなければ記録した順
+const entryKey = (e) => `${e.date} ${e.time || ''} ${e.savedAt || ''}`;
+const sortHistory = (list) => list.sort((a, b) => entryKey(b).localeCompare(entryKey(a)));
+
+// 2 つの設定が同じ地図かどうか
+function sameMap(a, b) {
+  const norm = (c) => JSON.stringify({ base: c?.base?.src || '', layers: (c?.layers || []).map((l) => [l.id, l.src, l.opacity ?? 1, l.visible !== false]), bg: c?.background?.src || '' });
+  return norm(a) === norm(b);
+}
+
 function normalizeHistory(h) {
   const list = Array.isArray(h?.entries) ? h.entries : [];
-  return list
+  const used = new Set();
+  return sortHistory(list
     .filter((e) => e && /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.config)
-    .map((e) => ({ date: e.date, savedAt: e.savedAt || '', memo: e.memo || '', config: normalize(e.config) }))
-    .sort((a, b) => b.date.localeCompare(a.date));
+    .map((e) => {
+      // 以前の形式（1日1件・id なし）の記録は、日付を id にし、記録した時刻を補う
+      let id = String(e.id || e.date);
+      while (used.has(id)) id = `${id}-${uid().slice(-3)}`;
+      used.add(id);
+      const saved = e.savedAt ? new Date(e.savedAt) : null;
+      const time = e.time ?? (saved && !Number.isNaN(+saved) && todayStr(saved) === e.date ? nowTime(saved) : '');
+      return { id, date: e.date, time: time || '', savedAt: e.savedAt || '', memo: e.memo || '', config: normalize(e.config) };
+    }));
 }
 
 function historyJson(history) {
-  const entries = history.map((e) => ({ date: e.date, savedAt: e.savedAt, memo: e.memo, config: stripConfig(e.config) }));
-  return `${JSON.stringify({ version: 1, entries }, null, 2)}\n`;
+  const entries = history.map((e) => ({ id: e.id, date: e.date, time: e.time || '', savedAt: e.savedAt, memo: e.memo, config: stripConfig(e.config) }));
+  return `${JSON.stringify({ version: 2, entries }, null, 2)}\n`;
 }
 
 function stripConfig(c) {
@@ -461,7 +481,10 @@ function bindInputs() {
   $('#publishBtn').addEventListener('click', publish);
   $('#previewBack').addEventListener('click', endPreview);
   $('#histImportBtn').addEventListener('click', importHistory);
-  $('#histRecord').addEventListener('change', updatePublishBar);
+  $('#histRecord').addEventListener('change', () => { $('#histNew').hidden = !$('#histRecord').checked; });
+  $('#histDate').addEventListener('input', () => { newWhen.dateTouched = true; });
+  $('#histTime').addEventListener('input', () => { newWhen.timeTouched = true; });
+  resetNewEntryInputs();
   $('#zipBtn').addEventListener('click', exportZip);
 }
 
@@ -593,69 +616,102 @@ async function loadConfig() {
 
 /* ---------- 履歴 ---------- */
 
-/** 公開後の履歴（「履歴に残す」がオンなら今日の記録を追加・上書き） */
+/** 「記録の日付・時刻」の入力。触っていなければ公開した日時を使う */
+const newWhen = { dateTouched: false, timeTouched: false };
+function resetNewEntryInputs() {
+  newWhen.dateTouched = false;
+  newWhen.timeTouched = false;
+  $('#histDate').value = todayStr();
+  $('#histTime').value = nowTime();
+  $('#histMemo').value = '';
+}
+
+/** 直前に公開した記録（日付の並びではなく、公開した時刻がいちばん新しいもの） */
+function lastPublished(list = state.history) {
+  return list.reduce((a, e) => (!a || (e.savedAt || '') > (a.savedAt || '') ? e : a), null);
+}
+
+/** 公開後の履歴（「履歴に残す」がオンなら記録を追加、または直前の記録を上書き） */
 function historyAfterPublish(cfg) {
   const list = state.history.map((e) => ({ ...e }));
   if (!$('#histRecord').checked) return list;
-  const date = todayStr();
+  const now = new Date();
+  const date = newWhen.dateTouched && $('#histDate').value ? $('#histDate').value : todayStr(now);
+  const time = newWhen.timeTouched ? $('#histTime').value : nowTime(now);
   const memo = $('#histMemo').value.trim();
-  const i = list.findIndex((e) => e.date === date);
-  const entry = { date, savedAt: new Date().toISOString(), memo: memo || (i >= 0 ? list[i].memo : ''), config: structuredClone(cfg) };
-  if (i >= 0) list[i] = entry; else list.push(entry);
-  return list.sort((a, b) => b.date.localeCompare(a.date));
+  const last = lastPublished(list);
+  const replace = document.querySelector('input[name="histMode"]:checked')?.value === 'replace' && last;
+  if (replace) {
+    const top = last;
+    list[list.indexOf(last)] = {
+      ...top,
+      date: newWhen.dateTouched ? date : top.date,
+      time: newWhen.timeTouched ? time : top.time,
+      savedAt: now.toISOString(),
+      memo: memo || top.memo,
+      config: structuredClone(cfg),
+    };
+  } else {
+    list.push({ id: uid(), date, time, savedAt: now.toISOString(), memo, config: structuredClone(cfg) });
+  }
+  return sortHistory(list);
 }
 
 function renderHistory() {
   const ul = $('#histList');
   if (!ul) return;
   ul.replaceChildren();
-  $('#histToday').textContent = fmtDate(todayStr());
   $('#histEmpty').hidden = state.history.length > 0;
   $('#histImport').hidden = !state.gh;
-  const today = todayStr();
-  for (const e of state.history) {
+  $('#histNew').hidden = !$('#histRecord').checked;
+  const last = lastPublished();
+  const replaceRadio = document.querySelector('input[name="histMode"][value="replace"]');
+  replaceRadio.disabled = !last;
+  if (!last) document.querySelector('input[name="histMode"][value="add"]').checked = true;
+  $('#histReplaceTarget').textContent = last ? `（${fmtEntry(last)}${last.memo ? `・${last.memo}` : ''}）` : '（まだ記録がありません）';
+  state.history.forEach((e, i) => {
     const li = $('#histTpl').content.firstElementChild.cloneNode(true);
-    li.classList.toggle('is-today', e.date === today);
+    li.classList.toggle('is-today', i === 0);
     li.classList.toggle('is-previewing', state.previewing === e);
     const date = $('.hist-date', li);
+    const time = $('.hist-time', li);
     date.value = e.date;
-    date.addEventListener('change', () => {
+    time.value = e.time || '';
+    const onWhen = () => {
       if (!date.value) { date.value = e.date; return; }
-      if (state.history.some((x) => x !== e && x.date === date.value)) {
-        toast('その日付の記録はすでにあります', { error: true });
-        date.value = e.date;
-        return;
-      }
       e.date = date.value;
-      state.history.sort((a, b) => b.date.localeCompare(a.date));
+      e.time = time.value;
+      sortHistory(state.history);
       renderHistory(); markDirty();
-    });
+    };
+    date.addEventListener('change', onWhen);
+    time.addEventListener('change', onWhen);
     const memo = $('.hist-memo', li);
     memo.value = e.memo;
     memo.addEventListener('input', () => { e.memo = memo.value; markDirty(); });
     const n = (e.config.layers || []).length;
     const saved = e.savedAt ? new Date(e.savedAt) : null;
-    $('.hist-info', li).textContent = `${fmtDate(e.date)}・レイヤー ${n} 枚${saved && !Number.isNaN(+saved) ? `・${saved.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} に記録` : ''}`;
+    $('.hist-info', li).textContent = `${i === 0 ? 'いちばん新しい記録・' : ''}レイヤー ${n} 枚${saved && !Number.isNaN(+saved) ? `・${saved.toLocaleString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} に公開` : ''}`;
     li.addEventListener('click', (ev) => {
       const act = ev.target.closest('[data-act]')?.dataset.act;
       if (act === 'preview') previewHistory(e);
       if (act === 'restore') {
-        if (state.dirty && !confirm(`編集中の内容を ${fmtDate(e.date)} の地図に置き換えますか？（公開するまでは閲覧ページは変わりません）`)) return;
+        if (state.dirty && !confirm(`編集中の内容を ${fmtEntry(e)} の地図に置き換えますか？（公開するまでは閲覧ページは変わりません）`)) return;
         state.config = normalize(structuredClone(e.config));
         state.previewing = null;
         $('#previewBack').hidden = true;
         renderAll(); markDirty();
-        toast(`${fmtDate(e.date)} の地図を編集に読み込みました`);
+        toast(`${fmtEntry(e)} の地図を編集に読み込みました`);
       }
       if (act === 'remove') {
-        if (!confirm(`${fmtDate(e.date)} の記録を削除しますか？（公開すると、この記録だけが使っていた画像も削除されます）`)) return;
+        if (!confirm(`${fmtEntry(e)} の記録を削除しますか？（公開すると、この記録だけが使っていた画像も削除されます）`)) return;
         state.history.splice(state.history.indexOf(e), 1);
         if (state.previewing === e) endPreview();
         renderHistory(); markDirty();
       }
     });
     ul.append(li);
-  }
+  });
 }
 
 function previewHistory(e) {
@@ -663,7 +719,7 @@ function previewHistory(e) {
   clearTimeout(previewTimer);
   stage.load(structuredClone(e.config), { keepView: true, syncVisible: true });
   $('#previewBack').hidden = false;
-  $('#previewNote').textContent = `${fmtDate(e.date)} の地図をプレビュー中`;
+  $('#previewNote').textContent = `${fmtEntry(e)} の地図をプレビュー中`;
   renderHistory();
 }
 
@@ -675,36 +731,41 @@ function endPreview() {
   renderHistory();
 }
 
-/** GitHub に残っている過去の公開から、日付ごとの履歴を作る（画像は過去のコミットからそのまま戻す） */
+/** GitHub に残っている過去の公開から履歴を作る（画像は過去のコミットからそのまま戻す） */
 async function importHistory() {
   const btn = $('#histImportBtn');
+  const all = $('#histImportAll').checked;
   btn.disabled = true;
   btn.textContent = '読み込み中…';
   try {
     const commits = await state.gh.commitsFor('data/config.json');
-    const byDate = new Map();
-    for (const c of commits) {  // 新しい順なので、各日付の最初のものがその日の最後の公開
-      const d = todayStr(new Date(c.commit.committer?.date || c.commit.author?.date));
-      if (!byDate.has(d)) byDate.set(d, c);
+    const picked = [];
+    const days = new Set();
+    for (const c of commits) {  // 新しい順。1日1件なら、各日付の最初のものがその日の最後の公開
+      if (!String(c.commit.message || '').startsWith('管理ページから')) continue;  // 手動のアップロードなどは除く
+      const when = new Date(c.commit.committer?.date || c.commit.author?.date);
+      const d = todayStr(when);
+      if (!all && days.has(d)) continue;
+      days.add(d);
+      picked.push({ c, when });
     }
     let added = 0;
-    for (const [date, c] of byDate) {
-      if (state.history.some((e) => e.date === date)) continue;
-      btn.textContent = `読み込み中…（${fmtDate(date)}）`;
+    for (const { c, when } of picked) {
+      btn.textContent = `読み込み中…（${fmtDate(todayStr(when))} ${nowTime(when)}）`;
       let cfg;
       try { cfg = normalize(JSON.parse(await state.gh.getTextAt('data/config.json', c.sha))); } catch { continue; }
+      if (!cfg.base && !cfg.layers.length) continue;
+      if (state.history.some((e) => sameMap(e.config, cfg))) continue;  // 同じ内容の記録はもうある
       const tree = await state.gh.treeMap(c.commit.tree.sha);
-      const missing = [...refs(cfg)].filter((src) => !tree.has(src));
-      if (missing.length) continue;  // 画像が揃っていない記録は使わない
+      if ([...refs(cfg)].some((src) => !tree.has(src))) continue;  // 画像が揃っていない記録は使わない
       for (const src of refs(cfg)) if (!state.loadedRefs.has(src)) state.restore.set(src, tree.get(src));
-      state.history.push({ date, savedAt: c.commit.committer?.date || '', memo: '', config: cfg });
+      state.history.push({ id: uid(), date: todayStr(when), time: nowTime(when), savedAt: when.toISOString(), memo: '', config: cfg });
       added++;
     }
-    state.history.sort((a, b) => b.date.localeCompare(a.date));
-    // 過去の画像をプレビューできるよう、リポジトリから直接読む
+    sortHistory(state.history);
     resolveCache.clear();
     renderHistory();
-    if (added) { markDirty(); toast(`${added} 日分の履歴を作りました。「公開する」で保存されます`); }
+    if (added) { markDirty(); toast(`${added} 件の記録を作りました。「公開する」で保存されます`); }
     else toast('追加できる過去の記録はありませんでした');
   } catch (err) {
     toast(err.message, { error: true, ms: 6000 });
@@ -764,7 +825,8 @@ async function publish() {
     state.history = history;
     state.restore.clear();
     state.historyLoaded = true;
-    $('#histMemo').value = '';
+    resetNewEntryInputs();
+    document.querySelector('input[name="histMode"][value="add"]').checked = true;
     state.dirty = false;
     updatePublishBar();
     renderHistory();
@@ -822,7 +884,7 @@ async function main() {
     onMode: (mode) => {
       document.querySelectorAll('.seg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
       $('#previewNote').textContent = state.previewing
-        ? `${fmtDate(state.previewing.date)} の地図をプレビュー中`
+        ? `${fmtEntry(state.previewing)} の地図をプレビュー中`
         : mode === 'flat' ? 'プレビュー（左右にドラッグで回り込み）' : 'プレビュー（ドラッグで回転）';
     },
     onState: (s) => {
