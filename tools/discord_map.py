@@ -81,11 +81,23 @@ def open_rgba(src):
     return Image.open(ROOT / src).convert("RGBA")
 
 
-def compose(config, layers):
-    """閲覧ページと同じ合成：下地の大きさに各レイヤーを合わせ、不透明度を掛けて重ねる"""
+_cache = {}
+
+
+def open_cached(src):
+    """何枚か作るときに同じ画像を何度も読み込まないように"""
+    if src not in _cache:
+        _cache[src] = open_rgba(src)
+    return _cache[src]
+
+
+def compose(config, layers, opacity=None):
+    """閲覧ページと同じ合成：下地の大きさに各レイヤーを合わせ、不透明度を掛けて重ねる。
+    opacity は { レイヤー名: 0〜100 }（指定がなければ管理ページの設定）"""
+    opacity = opacity or {}
     base_src = (config.get("base") or {}).get("src")
-    base = open_rgba(base_src) if base_src else None
-    imgs = [(l, open_rgba(l["src"])) for l in layers if l.get("src")]
+    base = open_cached(base_src) if base_src else None
+    imgs = [(l, open_cached(l["src"])) for l in layers if l.get("src")]
     if base is not None:
         size = base.size
     elif imgs:
@@ -98,10 +110,13 @@ def compose(config, layers):
     for l, im in imgs:
         if im.size != size:
             im = im.resize(size, Image.LANCZOS)
-        opacity = max(0.0, min(1.0, float(l.get("opacity", 1))))
-        if opacity < 1:
-            a = im.getchannel("A").point(lambda v: round(v * opacity))
-            im.putalpha(a)
+        o = opacity[l["name"]] / 100 if l.get("name") in opacity else float(l.get("opacity", 1))
+        o = max(0.0, min(1.0, o))
+        if o <= 0:
+            continue
+        if o < 1:
+            im = im.copy()
+            im.putalpha(im.getchannel("A").point(lambda v: round(v * o)))
         out.alpha_composite(im)
     return out
 
@@ -131,24 +146,48 @@ def unseal(sealed, secret):
     return json.loads(plain)
 
 
-def edit_original(app_id, token, content, png=None):
+def send(app_id, token, content, pngs=(), first=True, ephemeral=False):
+    """最初は「考え中…」の投稿を差し替え、2 通目以降は続けて投稿する。pngs は (ファイル名, データ) の並び"""
     import requests
 
-    url = f"{DISCORD_API}/webhooks/{app_id}/{token}/messages/@original"
-    payload = {"content": content, "allowed_mentions": {"parse": []}}
-    if png is None:
-        r = requests.patch(url, json=payload, timeout=60)
+    if first:
+        url, method = f"{DISCORD_API}/webhooks/{app_id}/{token}/messages/@original", requests.patch
     else:
-        payload["attachments"] = [{"id": 0, "filename": "map.png"}]
-        r = requests.patch(
+        url, method = f"{DISCORD_API}/webhooks/{app_id}/{token}", requests.post
+    payload = {"content": content, "allowed_mentions": {"parse": []}}
+    if not first and ephemeral:
+        payload["flags"] = 64
+    if not pngs:
+        r = method(url, json=payload, timeout=60)
+    else:
+        payload["attachments"] = [{"id": i, "filename": n} for i, (n, _) in enumerate(pngs)]
+        r = method(
             url,
             data={"payload_json": json.dumps(payload, ensure_ascii=False)},
-            files={"files[0]": ("map.png", png, "image/png")},
-            timeout=120,
+            files={f"files[{i}]": (n, d, "image/png") for i, (n, d) in enumerate(pngs)},
+            timeout=180,
         )
     if r.status_code >= 300:
         print(f"Discord への投稿に失敗: {r.status_code} {r.text}", file=sys.stderr)
         r.raise_for_status()
+
+
+def edit_original(app_id, token, content, png=None):
+    send(app_id, token, content, [("map.png", png)] if png is not None else ())
+
+
+def parse_request(raw):
+    """LAYERS の中身。["白地", ...]（1 枚）または {"sets": [[...], [...]], "opacity": {...}}"""
+    if not raw:
+        return [None], {}
+    v = json.loads(raw)
+    if isinstance(v, dict):
+        sets = v.get("sets") or [None]
+        return [s if s is not None else None for s in sets], {k: int(x) for k, x in (v.get("opacity") or {}).items()}
+    return [v], {}
+
+
+CIRCLED = "①②③④⑤⑥⑦⑧⑨⑩"
 
 
 def main():
@@ -168,22 +207,49 @@ def main():
 
     # GitHub Actions から呼ばれた場合
     dest = unseal(os.environ["PAYLOAD"], os.environ["DISCORD_SHARED_SECRET"])
-    app_id, token = dest["a"], dest["t"]
+    app_id, token, eph = dest["a"], dest["t"], bool(dest.get("e"))
     label = os.environ.get("LABEL", "")
     try:
         date = os.environ.get("MAP_DATE", "").strip()
         config = config_for_date(date)
         title = config.get("title") or "地図"
-        raw = os.environ.get("LAYERS", "").strip()
-        names = json.loads(raw) if raw else None
-        layers = pick_layers(config, names)
-        data, size, scale = encode_png(compose(config, layers))
-        shown = "・".join(l["name"] for l in layers) or "下地のみ"
-        note = f"\n（大きいため {round(scale * 100)}% に縮小しています）" if scale < 1 else ""
-        head = f"**{title}**｜{label}" if label and label != shown else f"**{title}**"
+        sets, opacity = parse_request(os.environ.get("LAYERS", "").strip())
+        images = []
+        for i, names in enumerate(sets[:10]):
+            layers = pick_layers(config, names)
+            data, size, scale = encode_png(compose(config, layers, opacity))
+            shown = "・".join(l["name"] for l in layers) or "下地のみ"
+            images.append({"name": f"map{i + 1}.png" if len(sets) > 1 else "map.png", "data": data, "shown": shown, "scale": scale})
+            print(f"rendered {shown}: {size[0]}x{size[1]} {len(data) / 1e6:.1f}MB")
+
         when = entry_label(date)
-        edit_original(app_id, token, f"{head}\n{when}｜レイヤー: {shown}{note}", data)
-        print(f"posted {size[0]}x{size[1]} {len(data) / 1e6:.1f}MB")
+        op_text = "・".join(f"{n} {v}%" for n, v in opacity.items())
+        if len(images) == 1:
+            im = images[0]
+            head = f"**{title}**｜{label}" if label and label != im["shown"] else f"**{title}**"
+            lines = [head, f"{when}｜レイヤー: {im['shown']}"]
+        else:
+            lines = [f"**{title}**｜{label}" if label else f"**{title}**", when]
+            lines += [f"{CIRCLED[i]} {im['shown']}" for i, im in enumerate(images)]
+        if op_text:
+            lines.append(f"透明度: {op_text}")
+        small = [CIRCLED[i] if len(images) > 1 else "" for i, im in enumerate(images) if im["scale"] < 1]
+        if small:
+            lines.append(f"（大きいため{''.join(small)}は縮小しています）")
+
+        # Discord の 1 投稿の上限（画像 10 枚・合計 10MB 程度）に収まるよう、必要なら投稿を分ける
+        batches, cur, total = [], [], 0
+        for im in images:
+            if cur and (total + len(im["data"]) > MAX_BYTES or len(cur) >= 10):
+                batches.append(cur)
+                cur, total = [], 0
+            cur.append(im)
+            total += len(im["data"])
+        batches.append(cur)
+        for bi, batch in enumerate(batches):
+            text = "\n".join(lines) if bi == 0 else f"（続き {bi + 1}/{len(batches)}）"
+            send(app_id, token, text, [(im["name"], im["data"]) for im in batch], first=bi == 0, ephemeral=eph)
+        print(f"posted {len(images)} image(s) in {len(batches)} message(s)")
     except Exception as e:  # 失敗しても「考え中…」のままにしない
         edit_original(app_id, token, f"地図を作成できませんでした: {e}")
         raise

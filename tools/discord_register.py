@@ -18,9 +18,9 @@ COMMAND = {
             "type": 3,
             "name": "layers",
             "name_localizations": {"ja": "レイヤー"},
-            "description": "Layer names separated by spaces (leave empty to open a picker)",
+            "description": "Layer names separated by spaces; use | for separate images (empty: picker)",
             "description_localizations": {
-                "ja": "レイヤー名（空白区切りで複数可。「すべて」で全レイヤー。省略すると選択メニューが開きます）"
+                "ja": "レイヤー名（空白区切り。「|」で区切ると別々の画像に。省略すると選択メニュー）"
             },
             "required": False,
             "autocomplete": True,
@@ -33,6 +33,23 @@ COMMAND = {
             "description_localizations": {"ja": "地図の日付（例：2026-10-26、10/26、10/26 14:30。省略すると最新）"},
             "required": False,
             "autocomplete": True,
+        },
+        {
+            "type": 3,
+            "name": "opacity",
+            "name_localizations": {"ja": "透明度"},
+            "description": "Layer opacity 0-100, e.g. 国家 50 海域 30",
+            "description_localizations": {"ja": "例：国家 50 海域 30（100=そのまま 50=半分透ける 0=見えない）"},
+            "required": False,
+            "autocomplete": True,
+        },
+        {
+            "type": 5,
+            "name": "private",
+            "name_localizations": {"ja": "自分だけ"},
+            "description": "Only you can see the map",
+            "description_localizations": {"ja": "True にすると、地図が自分にだけ見える形で送られます"},
+            "required": False,
         },
     ],
 }
