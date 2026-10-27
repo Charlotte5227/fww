@@ -87,6 +87,14 @@ export class SaveMenu {
     this.buildLayerList();
   }
 
+  /** 表示している版が変わったとき（過去の日付なら、保存するファイル名に日付を付ける） */
+  setConfig(config, date = '') {
+    this.config = config;
+    this.title = safeName(`${config.title || '地図'}${date ? `_${date}` : ''}`, '地図');
+    this.buildLayerList();
+    this.showMain(false);
+  }
+
   get isOpen() { return !this.menu.hidden; }
 
   toggle() { this.isOpen ? this.close() : this.open(); }

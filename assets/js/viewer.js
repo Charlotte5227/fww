@@ -1,7 +1,8 @@
 // 閲覧サイト
-import { Stage } from './engine.js?v=20261027-1';
-import { Dial } from './dial.js?v=20261027-1';
-import { SaveMenu } from './save.js?v=20261027-1';
+import { Stage } from './engine.js?v=20261027-2';
+import { Dial } from './dial.js?v=20261027-2';
+import { SaveMenu } from './save.js?v=20261027-2';
+import { History } from './history.js?v=20261027-2';
 
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
@@ -10,12 +11,13 @@ const hintEl = $('#hint');
 const autoBtn = $('#autoBtn');
 const modeBtns = [...document.querySelectorAll('.mode-switch button')];
 const CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const SLIDERS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>';
 
 let stage;
 let dial;
-let config;
+let config;      // 今表示している版の設定
 let saveMenu;
-let closeOpacityPanel = () => {};
+let history;
 
 function setStatus(html) { statusEl.innerHTML = html; }
 
@@ -29,6 +31,52 @@ function toast(msg, { error = false } = {}) {
   toastTimer = setTimeout(() => t.classList.remove('is-on'), error ? 5000 : 3000);
 }
 
+/* ---------- パネルの開閉（同時に開くのは 1 つだけ） ---------- */
+
+const opacity = {
+  panel: $('#layerPanel'),
+  tool: null,
+  get isOpen() { return !this.panel.hidden; },
+};
+
+function closePanels(except) {
+  if (except !== 'opacity') openOpacity(false);
+  if (except !== 'save') saveMenu?.close();
+  if (except !== 'history') history?.close();
+}
+
+// スマホでは下側に出る透明度パネルを避けて、地図をその上の空いた範囲に表示する
+const narrow = matchMedia('(max-width: 600px)');
+function fitAroundPanel() {
+  if (opacity.isOpen && narrow.matches) {
+    const r = opacity.panel.getBoundingClientRect();
+    stage?.setPadding({ top: 110, bottom: Math.max(90, window.innerHeight - r.top + 8) });
+  } else {
+    stage?.setPadding({ top: 110, bottom: 90 });
+  }
+}
+
+function openOpacity(open) {
+  if (open === opacity.isOpen) return;
+  if (open) { closePanels('opacity'); hintEl.classList.add('is-gone'); }
+  opacity.panel.hidden = !open;
+  opacity.tool?.setAttribute('aria-expanded', String(open));
+  fitAroundPanel();
+}
+
+function initPanels() {
+  new ResizeObserver(fitAroundPanel).observe(opacity.panel);
+  narrow.addEventListener('change', fitAroundPanel);
+  $('#panelClose').addEventListener('click', () => { openOpacity(false); opacity.tool?.focus(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && opacity.isOpen) { openOpacity(false); opacity.tool?.focus(); }
+  });
+  $('#opacityReset').addEventListener('click', () => {
+    for (const l of config.layers || []) stage.setLayerOpacity(l.id, null);
+    buildLayerUI();
+  });
+}
+
 /** 地図以外の表示（タイトル・レイヤー欄・操作パネルなど）を隠す／戻す */
 function setUiHidden(hidden) {
   const btn = $('#uiBtn');
@@ -38,8 +86,7 @@ function setUiHidden(hidden) {
   btn.setAttribute('aria-label', label);
   btn.title = `${label}（H）`;
   if (hidden) {
-    closeOpacityPanel();
-    saveMenu?.close();
+    closePanels();
     hintEl.classList.add('is-gone');
   }
 }
@@ -55,8 +102,6 @@ function onMode(mode) {
   saveMenu?.refreshMode();
 }
 
-const SLIDERS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>';
-
 function makeCheck() {
   const box = document.createElement('span');
   box.className = 'box';
@@ -64,17 +109,17 @@ function makeCheck() {
   return box;
 }
 
-/** 上部のチェック欄と透明度パネルをまとめて作る（両方の表示は常に同期） */
+/** 上部のチェック欄と透明度パネルを、今表示している版のレイヤーで作り直す（両方の表示は常に同期） */
 function buildLayerUI() {
   const list = $('#layerList');
   const panelList = $('#panelList');
-  const panel = $('#layerPanel');
   list.replaceChildren();
   panelList.replaceChildren();
+  if (history?.chip) list.append(history.chip);
   // 管理画面と同じく「手前に重なるもの」から並べる
   const layers = [...(config.layers || [])].reverse();
-  $('#layerbar').hidden = layers.length === 0;
-  if (!layers.length) return;
+  $('#layerbar').hidden = layers.length === 0 && !history?.chip;
+  if (!layers.length) { openOpacity(false); return; }
 
   const views = new Map(); // id -> { chip, panelCheck, range, out, row }
   let allInput = null;
@@ -108,36 +153,12 @@ function buildLayerUI() {
   const tool = document.createElement('button');
   tool.type = 'button';
   tool.className = 'chip tool';
-  tool.setAttribute('aria-expanded', 'false');
+  tool.setAttribute('aria-expanded', String(opacity.isOpen));
   tool.setAttribute('aria-controls', 'layerPanel');
   tool.innerHTML = `${SLIDERS}<span class="name">透明度</span>`;
+  tool.addEventListener('click', () => openOpacity(!opacity.isOpen));
+  opacity.tool = tool;
   list.append(tool);
-  // スマホでは下側に出るパネルを避けて、地図をその上の空いた範囲に表示する
-  const narrow = matchMedia('(max-width: 600px)');
-  const fitAroundPanel = () => {
-    if (!panel.hidden && narrow.matches) {
-      const r = panel.getBoundingClientRect();
-      stage.setPadding({ top: 110, bottom: Math.max(90, window.innerHeight - r.top + 8) });
-    } else {
-      stage.setPadding({ top: 110, bottom: 90 });
-    }
-  };
-  new ResizeObserver(fitAroundPanel).observe(panel);
-  narrow.addEventListener('change', fitAroundPanel);
-  const openPanel = (open) => {
-    if (open) saveMenu?.close();
-    panel.hidden = !open;
-    tool.setAttribute('aria-expanded', String(open));
-    if (open) hintEl.classList.add('is-gone');
-    fitAroundPanel();
-  };
-  closeOpacityPanel = () => { if (!panel.hidden) openPanel(false); };
-  tool.addEventListener('click', () => openPanel(panel.hidden));
-  $('#panelClose').onclick = () => { openPanel(false); tool.focus(); };
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !panel.hidden) { openPanel(false); tool.focus(); } });
-  $('#opacityReset').onclick = () => {
-    for (const l of layers) { stage.setLayerOpacity(l.id, null); showOpacity(l.id); }
-  };
 
   const makeChip = (name, checked, onChange, extraClass = '') => {
     const label = document.createElement('label');
@@ -197,6 +218,21 @@ function buildLayerUI() {
   syncAll();
 }
 
+function setTitle(version) {
+  const title = config.title || '筒ビューア';
+  $('#title').textContent = title;
+  document.title = version?.date ? `${title}（${version.short}）` : title;
+}
+
+/** 表示する版（最新・過去の日付）を切り替える。レイヤーの表示状態や拡大はそのまま */
+async function showVersion(v, { initial = false } = {}) {
+  config = v.config;
+  setTitle(v);
+  if (!initial) await stage.load(config, { keepView: true, syncVisible: false });
+  buildLayerUI();
+  saveMenu?.setConfig(config, v.date || '');
+}
+
 function setupHint() {
   const touch = matchMedia('(pointer: coarse)').matches;
   hintEl.textContent = touch ? 'ドラッグで回転／ピンチで拡大' : 'ドラッグで回転／ホイールで拡大';
@@ -218,7 +254,10 @@ async function main() {
       if (state === 'loading') setStatus('<div><div class="spinner"></div>読み込み中</div>');
       else if (state === 'empty') setStatus('<p>表示する画像がまだありません。<br>管理ページから下地画像かレイヤーを追加してください。</p>');
       else setStatus('');
-      if (failed?.length) console.warn('読み込めなかった画像:', failed);
+      if (failed?.length) {
+        console.warn('読み込めなかった画像:', failed);
+        toast('一部の画像を読み込めませんでした', { error: true });
+      }
     },
   });
   dial = new Dial($('#dial'), {
@@ -228,25 +267,35 @@ async function main() {
       hideHint();
     },
   });
+  initPanels();
 
+  let latest;
+  const historyFile = fetch('data/history.json', { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   try {
     const res = await fetch('data/config.json', { cache: 'no-cache' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    config = await res.json();
+    latest = await res.json();
   } catch (e) {
     setStatus('<p>設定ファイル（data/config.json）を読み込めませんでした。<br>ファイルが公開されているか確認してください。</p>');
     console.error(e);
     return;
   }
 
-  const title = config.title || '筒ビューア';
-  $('#title').textContent = title;
-  document.title = title;
-  const disp = config.display || {};
+  history = new History({
+    latest,
+    file: await historyFile,
+    onSelect: (v) => showVersion(v).then(() => toast(v.date ? `${v.long} の地図を表示しています` : '最新の地図を表示しています')),
+    onOpen: () => closePanels('history'),
+  });
+  const first = history.initial();   // URL に ?date= があればその日付
+  config = first.config;
+  setTitle(first);
+  const disp = latest.display || {};
 
   await stage.load(config);
-  saveMenu = new SaveMenu({ stage, config, toast, onOpen: () => { closeOpacityPanel(); hintEl.classList.add('is-gone'); } });
-  buildLayerUI();
+  saveMenu = new SaveMenu({ stage, config, toast, onOpen: () => { closePanels('save'); hintEl.classList.add('is-gone'); } });
+  await showVersion(first, { initial: true });
+  if (first.date) toast(`${first.long} の地図を表示しています`);
   dial.set(stage.angle);
 
   if (!stage.gl) {

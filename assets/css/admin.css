@@ -246,6 +246,32 @@ input[type="range"] { width: 100%; accent-color: var(--brass-deep); height: 32px
 .adder p { margin: 0 0 12px; color: var(--ink-2); font-size: 14px; }
 .adder .btns { justify-content: center; }
 
+/* ---------- 履歴 ---------- */
+.hist-list { list-style: none; margin: 4px 0 12px; padding: 0; display: grid; gap: 8px; }
+.hist {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.hist.is-today { border-color: var(--brass); }
+.hist.is-previewing { box-shadow: 0 0 0 3px rgba(201, 162, 74, .35); }
+.hist-main { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 4px 8px; align-items: center; }
+.hist-main input { min-height: 38px; padding: 5px 10px; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; width: 100%; }
+.hist-info { grid-column: 1 / -1; color: var(--ink-3); font-size: 13px; }
+.hist-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.hist-actions .danger { margin-left: auto; }
+.hist-empty { margin: 0 0 12px; color: var(--ink-3); font-size: 14px; }
+.hist-empty[hidden] { display: none; }
+.hist-import { border-top: 1px dashed var(--line); padding-top: 12px; }
+.preview-back { margin-left: auto; min-height: 34px; background: var(--brass); border-color: var(--brass); color: var(--night); }
+@media (max-width: 480px) {
+  .hist-main { grid-template-columns: 1fr; }
+  .hist-main input { font-size: 16px; }
+}
+
 /* ---------- GitHub ---------- */
 .gh-status { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-weight: 500; word-break: break-all; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); flex: none; }

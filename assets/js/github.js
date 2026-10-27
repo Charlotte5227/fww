@@ -88,7 +88,8 @@ export class GitHubClient {
 
   /**
    * 複数ファイルの追加・更新・削除を 1 つのコミットにまとめる
-   * @param {{files: {path:string, blob?:Blob, text?:string}[], deletes: string[], message: string, onProgress?:(msg:string, ratio:number)=>void}} p
+   * files の各要素は blob（画像）・text（文字）・sha（リポジトリにすでにある中身をそのまま使う）のどれか
+   * @param {{files: {path:string, blob?:Blob, text?:string, sha?:string}[], deletes: string[], message: string, onProgress?:(msg:string, ratio:number)=>void}} p
    */
   async commit({ files, deletes = [], message, onProgress = () => {} }) {
     const total = files.length + 3;
@@ -98,6 +99,7 @@ export class GitHubClient {
     // 1) ファイル本体をアップロード（blob 作成）
     const entries = [];
     for (const f of files) {
+      if (f.sha) { entries.push({ path: f.path, mode: '100644', type: 'blob', sha: f.sha }); done++; continue; }
       step(`アップロード中：${f.path.split('/').pop()}`);
       const content = f.blob ? await blobToBase64(f.blob) : textToBase64(f.text ?? '');
       const blob = await this.request('POST', '/git/blobs', { content, encoding: 'base64' });
@@ -133,6 +135,35 @@ export class GitHubClient {
       }
     }
     throw new GitHubError('ほかの更新と競合したため、公開できませんでした。少し待ってからもう一度お試しください。', 409);
+  }
+
+  /** あるファイルを変更したコミットの一覧（新しい順） */
+  async commitsFor(path, max = 300) {
+    const out = [];
+    for (let page = 1; out.length < max; page++) {
+      const list = await this.request('GET', `/commits?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(this.branch)}&per_page=100&page=${page}`);
+      out.push(...list);
+      if (list.length < 100) break;
+    }
+    return out.slice(0, max);
+  }
+
+  /** あるコミット時点のファイル（文字） */
+  async getTextAt(path, ref) {
+    const res = await this.request('GET', `/contents/${path}?ref=${encodeURIComponent(ref)}`, null, { raw: true, accept: 'application/vnd.github.raw+json' });
+    return res.text();
+  }
+
+  /** blob の sha から中身を取得 */
+  async getBlobBySha(sha) {
+    const res = await this.request('GET', `/git/blobs/${sha}`, null, { raw: true, accept: 'application/vnd.github.raw+json' });
+    return res.blob();
+  }
+
+  /** ツリーの中身（パス → blob の sha） */
+  async treeMap(treeSha) {
+    const t = await this.request('GET', `/git/trees/${treeSha}?recursive=1`);
+    return new Map(t.tree.filter((x) => x.type === 'blob').map((x) => [x.path, x.sha]));
   }
 
   /** 削除対象のうち実際にリポジトリに存在するものを調べる（存在しないパスを消そうとするとエラーになるため） */

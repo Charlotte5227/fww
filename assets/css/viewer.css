@@ -331,6 +331,37 @@ button.chip { font: inherit; color: var(--paper); }
 
 button:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: 2px; }
 
+/* ---------- 日付を選ぶ ---------- */
+.hist-chip.is-past { background: var(--brass); border-color: var(--brass); color: var(--night); }
+.hist-chip.is-past .name { color: var(--night); font-weight: 700; }
+.hist-panel .hist-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 8px 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.hrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.hrow:hover { background: rgba(238, 241, 246, .07); }
+.hrow[aria-current="true"] { background: rgba(201, 162, 74, .16); }
+.htext { display: flex; flex-direction: column; min-width: 0; }
+.hdate { font-weight: 500; }
+.hmemo { color: var(--mist); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.htag { flex: none; color: var(--brass-hi); font-size: 12.5px; }
+
 /* ---------- 画像の保存メニュー ---------- */
 .save-menu {
   position: absolute;
@@ -424,6 +455,7 @@ button:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: 2px; 
 .viewer.ui-hidden .layerbar,
 .viewer.ui-hidden .controls,
 .viewer.ui-hidden .layer-panel,
+.viewer.ui-hidden .hist-panel,
 .viewer.ui-hidden .save-menu,
 .viewer.ui-hidden .hint { opacity: 0; visibility: hidden; pointer-events: none; }
 .viewer.ui-hidden #uiBtn { opacity: .55; }

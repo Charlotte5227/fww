@@ -9,8 +9,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
-  <link rel="stylesheet" href="../assets/css/stage.css?v=20261027-1">
-  <link rel="stylesheet" href="../assets/css/admin.css?v=20261027-1">
+  <link rel="stylesheet" href="../assets/css/stage.css?v=20261027-2">
+  <link rel="stylesheet" href="../assets/css/admin.css?v=20261027-2">
 </head>
 <body>
   <header class="head">
@@ -28,6 +28,7 @@
           <button type="button" data-mode="flat" aria-pressed="false">平面</button>
         </div>
         <span class="preview-note" id="previewNote">プレビュー（ドラッグで回転）</span>
+        <button type="button" class="btn small preview-back" id="previewBack" hidden>編集中の地図に戻す</button>
       </div>
     </section>
 
@@ -135,6 +136,20 @@
         </div>
       </section>
 
+      <!-- 履歴 -->
+      <section class="panel" id="historyPanel">
+        <h2>履歴</h2>
+        <p class="desc">公開した地図を日付ごとに残し、閲覧ページで過去の日付の地図を見られるようにします。同じ日に何度公開しても、その日の記録は最後の公開内容で上書きされます。</p>
+        <label class="check"><input type="checkbox" id="histRecord" checked><span>公開するときに、今日（<span id="histToday"></span>）の地図として履歴に残す</span></label>
+        <label class="field"><span>今日の記録のメモ（任意。例：第12ターン、停戦後）</span><input id="histMemo" maxlength="60"></label>
+        <ul class="hist-list" id="histList"></ul>
+        <p class="hist-empty" id="histEmpty">まだ履歴はありません。次に公開すると、今日の地図が最初の記録になります。</p>
+        <div class="hist-import" id="histImport" hidden>
+          <p class="desc">これまでに管理ページから公開した地図は GitHub に残っています。そこから日付ごとの履歴を作れます（画像のアップロードはやり直しません）。</p>
+          <div class="btns"><button type="button" class="btn" id="histImportBtn">これまでの公開から履歴を作る</button></div>
+        </div>
+      </section>
+
       <!-- その他 -->
       <section class="panel">
         <h2>GitHub を使わずに更新する</h2>
@@ -169,6 +184,23 @@
     </div>
   </template>
 
+  <template id="histTpl">
+    <li class="hist">
+      <div class="hist-main">
+        <input type="date" class="hist-date" aria-label="日付">
+        <input class="hist-memo" maxlength="60" placeholder="メモ（任意）" aria-label="メモ">
+        <small class="hist-info"></small>
+      </div>
+      <div class="hist-actions">
+        <button type="button" class="btn small" data-act="preview">プレビュー</button>
+        <button type="button" class="btn small" data-act="restore">編集に読み込む</button>
+        <button type="button" class="btn icon danger" data-act="remove" aria-label="この記録を削除" title="この記録を削除">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg>
+        </button>
+      </div>
+    </li>
+  </template>
+
   <template id="layerTpl">
     <li class="layer">
       <div class="thumb"><img alt=""></div>
@@ -200,6 +232,6 @@
   </template>
 
   <script src="../assets/vendor/jszip.min.js" defer></script>
-  <script type="module" src="../assets/js/admin.js?v=20261027-1"></script>
+  <script type="module" src="../assets/js/admin.js?v=20261027-2"></script>
 </body>
 </html>
