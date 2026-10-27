@@ -3,7 +3,7 @@
   "title": "FWW世界地図",
   "base": {
     "name": "1000003303",
-    "src": "data/images/mvqwbpog11m8n.png"
+    "src": "data/images/mvqwdqcgznnk8.png"
   },
   "layers": [
     {
@@ -23,7 +23,7 @@
     {
       "id": "mvotd7pxsenwo",
       "name": "国家",
-      "src": "data/images/mvqsfqfcmv9hv.png",
+      "src": "data/images/mvqsikicvupve.png",
       "visible": true,
       "opacity": 1
     },
@@ -46,12 +46,12 @@
       "name": "海域",
       "src": "data/images/mvotrezvhbpp4.png",
       "visible": false,
-      "opacity": 1
+      "opacity": 0.65
     },
     {
       "id": "mvot9bwdj6nj4",
       "name": "国名",
-      "src": "data/images/mvqs4czbrx407.png",
+      "src": "data/images/mvqsi74x345s5.png",
       "visible": true,
       "opacity": 1
     }
@@ -64,7 +64,7 @@
   "display": {
     "defaultMode": "flat",
     "autoRotate": false,
-    "rotateSpeed": 21,
+    "rotateSpeed": 6,
     "shading": 0.55,
     "startAngle": 180
   }
