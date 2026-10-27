@@ -1,7 +1,8 @@
 // Discord の /地図 コマンドを受け付ける Cloudflare Worker
 //
 // 1. Discord からのリクエストを公開鍵で確認する
-// 2. レイヤー名を確認して「考え中…」と返す（3 秒以内に返す必要があるため）
+// 2. /地図 で選択メニュー、/地図 使い方 でヘルプを出す（どちらも自分にだけ見える）
+//    メニューの「地図を作る」で「考え中…」と返す（3 秒以内に返す必要があるため）
 // 3. GitHub Actions を起動し、Actions 側で地図を合成して Discord に投稿する
 //
 // 必要な設定（Cloudflare の「設定」→「変数とシークレット」）
@@ -9,10 +10,10 @@
 //   GITHUB_REPO         例: Charlotte5227/fww
 //   GITHUB_BRANCH       省略時は main
 //   GITHUB_TOKEN        （シークレット）Actions の読み書き権限を持つ GitHub のトークン
+//   SITE_URL            （任意）閲覧ページの URL。省略時は GitHub Pages の URL
 //   SHARED_SECRET       （シークレット）GitHub の DISCORD_SHARED_SECRET と同じ文字列
 
 const WORKFLOW = 'discord-map.yml';
-const ALL_WORDS = ['すべて', '全部', 'all'];
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
@@ -69,24 +70,6 @@ function todayJst() {
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 }
 
-/** 「10/26 14:30」のような時刻付きの入力を { date, time } に */
-function parseWhen(text, fallbackYear) {
-  const t = String(text || '').trim().replace(/[０-９：]/g, (c) => (c === '：' ? ':' : String.fromCharCode(c.charCodeAt(0) - 0xfee0)));
-  const m = /^(.*?)[\sT]+(\d{1,2}):(\d{2})$/.exec(t);
-  const date = parseDate(m ? m[1] : t, fallbackYear);
-  return date ? { date, time: m ? `${pad(m[2])}:${m[3]}` : '' } : null;
-}
-
-/** 「2026-10-26」「2026/10/26」「10/26」「10月26日」「20261026」を YYYY-MM-DD に */
-function parseDate(text, fallbackYear) {
-  const t = String(text || '').trim().replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/[／．.]/g, '/');
-  let m;
-  if ((m = /^(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})日?(（.*）|\(.*\))?$/.exec(t))) return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
-  if ((m = /^(\d{4})(\d{2})(\d{2})$/.exec(t))) return `${m[1]}-${m[2]}-${m[3]}`;
-  if ((m = /^(\d{1,2})[/月](\d{1,2})日?$/.exec(t))) return `${fallbackYear}-${pad(m[1])}-${pad(m[2])}`;
-  return null;
-}
-
 // 2 つの設定が同じ地図かどうか
 function sameMap(a, b) {
   const norm = (c) => JSON.stringify({ base: c?.base?.src || '', layers: (c?.layers || []).map((l) => [l.id, l.src, l.opacity ?? 1, l.visible !== false]), bg: c?.background?.src || '' });
@@ -137,51 +120,8 @@ const vDate = (v) => v.date || v.since || todayJst();
 const vTime = (v) => (v.date ? v.time : v.sinceTime) || '';
 const vName = (v) => (v.date ? longDate(v.date, v.time) : '最新の地図');
 
-/**
- * 入力から版を選ぶ。記録の ID（入力候補から選んだとき）、または日付（時刻付きも可）。
- * 日付だけなら、その日のいちばん新しい記録。記録のない日付なら、その時点で最も新しい記録
- */
-function resolveDate(data, input) {
-  const text = String(input || '').trim();
-  if (!text || ['最新', 'latest', '今'].includes(text.toLowerCase())) return { v: data.versions[0] };
-  const byId = data.versions.find((v) => v.date && v.key === text);
-  if (byId) return { v: byId };
-  const year = (data.versions[1]?.date || todayJst()).slice(0, 4);
-  const want = parseWhen(text, year);
-  if (!want) return { error: `日付「${text}」を読み取れませんでした。2026-10-26 や 10/26、10/26 14:30 のように入力してください。` };
-  const limit = `${want.date} ${want.time || '99:99'}`;
-  const dated = data.versions.map((v) => ({ v, k: `${vDate(v)} ${vTime(v) || (v.date ? '' : '99:98')}` }));
-  const hit = dated.filter((x) => x.k <= limit).sort((a, b) => b.k.localeCompare(a.k))[0];
-  if (!hit) {
-    const o = [...data.versions].sort((a, b) => `${vDate(a)} ${vTime(a)}`.localeCompare(`${vDate(b)} ${vTime(b)}`))[0];
-    return { error: `${longDate(want.date, want.time)}より前の記録はありません（いちばん古い記録は${longDate(vDate(o), vTime(o))}です）。` };
-  }
-  const exact = vDate(hit.v) === want.date && (!want.time || vTime(hit.v) === want.time);
-  const note = exact ? '' : `${longDate(want.date, want.time)}の時点の地図として、${hit.v.date ? longDate(hit.v.date, hit.v.time) : '最新'}の記録を使います。`;
-  return { v: hit.v, note };
-}
-
-const splitNames = (s) => String(s || '').split(/[\s,、，・]+/).map((x) => x.trim()).filter(Boolean);
-// 「白地 国家 | 地形 国名」のように、組み合わせを | で区切る（/ は日付に使うので区切りにしない）
-const SET_SEP = /[|｜;；]/;
-const splitSets = (s) => String(s || '').split(SET_SEP).map((x) => x.trim());
 const optionValue = (data, name) => (data.options || []).find((o) => o.name === name)?.value;
-
 const MAX_SETS = 10;  // Discord の 1 投稿に付けられる画像の数
-const OPACITY_GUIDE = '100＝そのまま（下は見えない）／75＝少し透ける／50＝半分透けて下も同じくらい見える／25＝うっすら（下が中心）／0＝見えない';
-
-/** 入力されたレイヤー名を確認する。空なら初期表示のレイヤー */
-function resolveLayers(config, input) {
-  const layers = config.layers || [];
-  const words = splitNames(input);
-  if (!words.length) return { names: layers.filter((l) => l.visible !== false).map((l) => l.name), label: '初期表示' };
-  if (words.some((w) => ALL_WORDS.includes(w.toLowerCase()))) return { names: layers.map((l) => l.name), label: 'すべて' };
-  const unknown = words.filter((w) => !layers.some((l) => l.name === w));
-  if (unknown.length) return { unknown };
-  // 重なり順は管理ページの設定どおり（入力の順番は関係ない）
-  const names = layers.filter((l) => words.includes(l.name)).map((l) => l.name);
-  return { names, label: names.join('・') };
-}
 
 /** 「国家 50 海域:30、白地=80%」→ { 国家: 50, 海域: 30, 白地: 80 } */
 function parseOpacity(config, text) {
@@ -200,80 +140,6 @@ function parseOpacity(config, text) {
     }
   }
   return { values: out, unknown: bad };
-}
-
-const choicesResponse = (choices) => json({ type: 8, data: { choices: choices.slice(0, 25) } });
-
-function layerChoices(config, input) {
-  const names = (config.layers || []).map((l) => l.name);
-  const full = String(input || '');
-  // 組み合わせが | で区切られていたら、最後の組み合わせだけを補う
-  const cut = Math.max(...[...full.matchAll(new RegExp(SET_SEP.source, 'g'))].map((m) => m.index), -1);
-  const head = cut >= 0 ? `${full.slice(0, cut + 1).trimEnd()} ` : '';
-  const text = full.slice(cut + 1).replace(/^\s+/, '');
-  const words = splitNames(text);
-  const endsWithSpace = /[\s,、，・]$/.test(text);
-  const done = endsWithSpace ? words : words.slice(0, -1);
-  const partial = endsWithSpace ? '' : words[words.length - 1] || '';
-  const prefix = `${head}${done.length ? `${done.join(' ')} ` : ''}`;
-  const choices = [];
-  if (!done.length && ALL_WORDS.some((w) => w.startsWith(partial))) choices.push({ name: `${head}すべてのレイヤー`, value: `${head}すべて` });
-  for (const n of names) {
-    if (done.includes(n) || (partial && !n.includes(partial))) continue;
-    const value = `${prefix}${n}`;
-    if (value.length <= 100) choices.push({ name: value, value });
-  }
-  // 入力がすでに完全なレイヤー名なら、そのまま確定できる候補と、次の組み合わせに進む候補も出す
-  if (words.length && words.every((w) => names.includes(w))) {
-    const cur = `${head}${words.join(' ')}`;
-    if (!choices.some((c) => c.value === cur)) choices.unshift({ name: cur, value: cur });
-    if (`${cur} | `.length <= 100) choices.splice(1, 0, { name: `${cur} | （次の画像のレイヤーを入力）`, value: `${cur} | ` });
-  }
-  return choices;
-}
-
-function opacityChoices(config, input) {
-  const text = String(input || '');
-  const names = (config.layers || []).map((l) => l.name);
-  const lastWord = splitNames(text).pop() || '';
-  const choices = [];
-  // 最後に打ったのがレイヤー名なら、透明度の目安を候補にする
-  if (names.includes(lastWord) && !/\d\s*%?\s*$/.test(text)) {
-    for (const [v, d] of [[75, '少し透ける'], [50, '半分透ける'], [25, 'うっすら'], [0, '見えない'], [100, 'そのまま']]) {
-      const value = `${text.trimEnd()} ${v}`;
-      if (value.length <= 100) choices.push({ name: `${value}（${d}）`, value });
-    }
-    return choices;
-  }
-  const prefix = text.trim() ? `${text.trimEnd()} ` : '';
-  for (const n of names) {
-    const value = `${prefix}${n}`;
-    if (value.length <= 100 && !splitNames(text).includes(n)) choices.push({ name: `${value} …（このあとに 0〜100 の数字）`, value });
-  }
-  return choices;
-}
-
-function dateChoices(data, input) {
-  const text = String(input || '').trim();
-  const parsed = parseDate(text, (data.versions[1]?.date || todayJst()).slice(0, 4));
-  const all = data.versions.map((v) => {
-    const d = v.date || v.since;
-    const m = ymdRe.exec(d || '');
-    return {
-      name: (v.date ? `${longDate(v.date, v.time)}${v.memo ? `・${v.memo}` : ''}` : `最新の地図${v.since ? `（${longDate(v.since, v.sinceTime)}）` : ''}${v.memo ? `・${v.memo}` : ''}`).slice(0, 100),
-      value: v.date ? v.key : '最新',
-      // 「10/26」「1026」のような打ち方でも見つかるように
-      keys: m ? [d, d.replace(/-/g, '/'), `${+m[2]}/${+m[3]}`, `${m[2]}${m[3]}`, `${+m[2]}月${+m[3]}日`] : [],
-    };
-  });
-  const out = (list) => list.map(({ name, value }) => ({ name, value }));
-  if (!text) return out(all);
-  const t = text.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
-  const hits = all.filter((c) => c.name.includes(t) || c.value.includes(t) || c.keys.some((k) => k.startsWith(t) || k.includes(t)) || (parsed && c.value === parsed));
-  // 一覧にない日付も入力できるようにする（その日の時点の地図になる）。いちばん古い記録より前は出さない
-  const oldest = all.map((c) => c.keys[0]).filter(Boolean).sort()[0] || '';
-  if (parsed && parsed >= oldest && !hits.some((c) => c.keys[0] === parsed)) hits.push({ name: `${longDate(parsed)}の時点の地図`, value: parsed });
-  return out(hits);
 }
 
 /* ---------- 選択メニュー ---------- */
@@ -379,6 +245,7 @@ function menu(data, st) {
         { type: 2, style: 2, custom_id: 'def', label: '初期表示に戻す' },
       ] : []),
       { type: 2, style: 4, custom_id: 'clear', label: '組み合わせを空にする', disabled: !sets.length },
+      { type: 2, style: 2, custom_id: 'help:menu', label: '❓ 使い方' },
     ],
   });
   // 取っておいた組み合わせの一覧（選ぶとその組み合わせを外す）。状態の保存場所も兼ねる
@@ -437,6 +304,186 @@ function opacityModal(st) {
         components: [{ type: 4, custom_id: 'ops', style: 2, label: '透明度（%）', value, required: false, max_length: 4000 }],
       }],
     },
+  };
+}
+
+/* ---------- 使い方（ヘルプ） ---------- */
+
+function siteUrl(env) {
+  if (env.SITE_URL) return env.SITE_URL;
+  const [owner, repo] = String(env.GITHUB_REPO || '').split('/');
+  if (!owner || !repo) return '';
+  return repo.toLowerCase() === `${owner.toLowerCase()}.github.io` ? `https://${repo}/` : `https://${owner.toLowerCase()}.github.io/${repo}/`;
+}
+
+/** ヘルプの項目。key は /地図 使い方 の選択肢と同じ */
+const HELP = [
+  {
+    key: 'index',
+    title: 'はじめに',
+    desc: 'できることと、基本の流れ',
+    body: (ctx) => [
+      `**${ctx.title}** の地図を、Discord に画像として送れます。`,
+      '',
+      '**基本の流れ**',
+      '1. `/地図` と打って送信すると、自分にだけ見えるメニューが開きます。',
+      '2. 「レイヤーを選ぶ」で、重ねたいレイヤーにチェックを付けます。',
+      '3. 「地図を作る」を押すと、30秒〜1分ほどで地図が送られます。',
+      '',
+      '**できること**',
+      '・好きなレイヤーを重ねた地図を送る',
+      '・違うレイヤーや日付の地図を、最大 10 枚まとめて送る',
+      '・過去の日付の地図を送る',
+      '・レイヤーの透明度を変える',
+      '・自分にだけ見える形で送る',
+      '',
+      '下の選択欄から、知りたい項目を選んでください。',
+    ],
+  },
+  {
+    key: 'menu',
+    title: 'メニューの使い方',
+    desc: 'ボタンや選択欄の意味',
+    body: () => [
+      '`/地図` で開くメニューの、上から順の説明です。',
+      '',
+      '**日付を選ぶ**：どの日の地図にするか（くわしくは「過去の地図」）',
+      '**レイヤーを選ぶ**：重ねるレイヤーにチェック（複数可）。最初は閲覧ページの初期表示と同じです',
+      '**地図を作る**：地図を送ります。メニューは残るので、続けて別の地図も作れます',
+      '**組み合わせを追加**：今の選択を取っておきます（くわしくは「まとめて送る」）',
+      '**透明度…**：レイヤーの透け具合を変えます（くわしくは「透明度」）',
+      '**⬜ 自分だけに表示**：押すと ✅ になり、自分にだけ見える形で送ります',
+      '**すべて選ぶ／初期表示に戻す**：レイヤーの選択をまとめて変えます',
+      '**組み合わせを空にする**：取っておいた組み合わせを全部外します',
+      '**取っておいた組み合わせを外す**（いちばん下）：選んだものだけ外します',
+      '',
+      '下地（いちばん下の画像）は、いつも含まれます。',
+      'メニューは自分にしか見えません。不要になったら「メッセージを閉じる」で消せます。',
+    ],
+  },
+  {
+    key: 'sets',
+    title: 'まとめて送る',
+    desc: '違うレイヤーや日付の地図を一度に',
+    body: () => [
+      '違うレイヤーや日付の地図を、1 つの投稿にまとめて送れます（最大 10 枚）。',
+      '',
+      '1. レイヤー（と日付）を選んで「**組み合わせを追加**」を押します。',
+      '2. 別のレイヤーや日付を選び直して、また「組み合わせを追加」。',
+      '3. メニューの「送る組み合わせ」に ①②… と並ぶので、確認して「**地図を作る（○枚）**」を押します。',
+      '',
+      '・最後に選んでいる内容（「← 今の選択」）も 1 枚として送られます。同じ組み合わせは 1 枚になります。',
+      '・組み合わせには、追加したときの日付が付きます。「① 白地・国家（10/26 15:46）」のように表示されます。',
+      '・いらない組み合わせは、いちばん下の「取っておいた組み合わせを外す」で選んで外せます。',
+      '・透明度は、まとめて送る地図すべてに同じ値が使われます。',
+    ],
+  },
+  {
+    key: 'date',
+    title: '過去の地図',
+    desc: '日付を選んで、その時点の地図を送る',
+    body: (ctx) => [
+      'メニューのいちばん上の「**日付を選ぶ**」で、過去の地図を選べます。',
+      '',
+      '・地図は、管理ページから公開するたびに記録として残ります。1 日に何回か更新した日は、時刻ごとに並びます。',
+      '・新しい順に 25 件まで選べます。',
+      '・日付を変えても、同じ名前のレイヤーの選択と透明度は引き継がれます。',
+      '・別の日付の地図と並べて送りたいときは「まとめて送る」を見てください。',
+      ctx.count > 1 ? `\n今は ${ctx.count - 1} 件の過去の記録があります（いちばん古いもの：${ctx.oldest}）。` : '\n今はまだ過去の記録がありません。',
+    ],
+  },
+  {
+    key: 'opacity',
+    title: '透明度',
+    desc: 'レイヤーの透け具合と目安',
+    body: () => [
+      'メニューの「**透明度…**」を押すと入力欄が開きます。',
+      '`国家: 100` のような行の数字を書き換えて「送信」すると、そのレイヤーの透け具合が変わります。',
+      '',
+      '**目安**',
+      '`100` そのまま。下のレイヤーは見えない（初期の状態）',
+      '` 75` 少し透ける。下がうっすら見える',
+      '` 50` 半分透ける。上と下が同じくらい見える',
+      '` 25` うっすら見える。下のレイヤーが中心',
+      '`  0` 見えない（そのレイヤーを外したのと同じ）',
+      '',
+      '・変えたレイヤーは、メニューの「透明度」の行に表示されます。',
+      '・まとめて送るときは、すべての地図に同じ透明度が使われます。',
+      '・書き換えなかったレイヤーは、管理ページで設定した透明度のままです。',
+    ],
+  },
+  {
+    key: 'private',
+    title: '自分だけに表示',
+    desc: 'ほかの人に見えない形で送る',
+    body: () => [
+      'メニューの「**⬜ 自分だけに表示**」を押すと ✅ に変わり、地図が自分にだけ見える形で送られます。もう一度押すと元に戻ります。',
+      '',
+      '・メニューの「送り先」の行で、今どちらになっているか確認できます。',
+      '・自分だけの地図は、Discord の仕組み上、時間がたつと（またはアプリを開き直すと）消えることがあります。残したい地図は保存してください。',
+      '・メニューとこの使い方は、いつも自分にだけ見えます。',
+    ],
+  },
+  {
+    key: 'trouble',
+    title: '困ったとき',
+    desc: '時間がかかる・届かないなど',
+    body: () => [
+      '**「考え中…」が長い**',
+      '地図はその場で作っているため、30秒〜1分ほどかかります。枚数が多いと少し長くなります。3 分以上たっても変わらないときは、管理している人に連絡してください。',
+      '',
+      '**ボタンを押しても反応しない・古い内容のまま**',
+      'メニューを開いてから時間がたつと、反応しなくなることがあります。`/地図` でメニューを開き直してください。',
+      '',
+      '**新しい地図が出てこない**',
+      '管理ページで公開してから反映まで、1〜2分かかります。少し待ってからメニューを開き直してください。',
+      '',
+      '**陸地が透明になった**',
+      '白地や地形のような、地面のレイヤーが選ばれていないためです。どちらかにチェックを付けてください。',
+    ],
+  },
+  {
+    key: 'site',
+    title: '閲覧ページ',
+    desc: 'ブラウザで地図を回して見る',
+    body: (ctx) => [
+      ctx.url ? `ブラウザで地図を見るときは、こちらを開いてください。\n${ctx.url}` : '閲覧ページの URL は、管理している人に聞いてください。',
+      '',
+      '・地図を筒のように回したり、平面で見たりできます。',
+      '・レイヤーの表示や透明度を、その場で切り替えられます。',
+      '・過去の日付の地図も見られます。',
+      '・画面の範囲や地図全体を、画像として保存できます。',
+    ],
+  },
+];
+
+/** ヘルプのメッセージ（自分にだけ見える）。下の選択欄でほかの項目に切り替えられる */
+function helpMessage(env, data, key) {
+  const topic = HELP.find((h) => h.key === key) || HELP[0];
+  const dated = data.versions.filter((v) => v.date);
+  const oldest = dated[dated.length - 1];
+  const ctx = {
+    title: data.latest.title || '地図',
+    url: siteUrl(env),
+    count: data.versions.length,
+    oldest: oldest ? longDate(oldest.date, oldest.time) : '',
+  };
+  return {
+    content: [`## ❓ ${topic.title}`, ...topic.body(ctx)].join('\n').slice(0, 2000),
+    flags: 64,
+    allowed_mentions: { parse: [] },
+    components: [
+      {
+        type: 1,
+        components: [{
+          type: 3,
+          custom_id: 'help',
+          placeholder: 'ほかの項目を見る',
+          options: HELP.map((h) => ({ label: h.title, description: h.desc, value: h.key, default: h.key === topic.key })),
+        }],
+      },
+      { type: 1, components: [{ type: 2, style: 1, custom_id: 'openmenu', label: '地図のメニューを開く' }] },
+    ],
   };
 }
 
@@ -505,60 +552,13 @@ export default {
     try {
       const data = await loadData(env);
 
-      if (interaction.type === 4) { // 入力候補
-        const focused = (interaction.data.options || []).find((o) => o.focused)?.name;
-        if (focused === 'date') return choicesResponse(dateChoices(data, optionValue(interaction.data, 'date')));
-        const r = resolveDate(data, optionValue(interaction.data, 'date'));
-        const config = (r.v || data.versions[0]).config;
-        if (focused === 'opacity') return choicesResponse(opacityChoices(config, optionValue(interaction.data, 'opacity')));
-        return choicesResponse(layerChoices(config, optionValue(interaction.data, focused || 'layers')));
-      }
-
-      if (interaction.type === 2 && interaction.data?.name === 'map') { // /地図
-        const d = resolveDate(data, optionValue(interaction.data, 'date'));
-        if (d.error) return ephemeral(d.error);
-        const { v } = d;
-        const priv = optionValue(interaction.data, 'private') === true;
-        const op = parseOpacity(v.config, optionValue(interaction.data, 'opacity'));
-        if (op.unknown.length) return ephemeral(`透明度：レイヤー ${op.unknown.map((u) => `「${u}」`).join('')} が見つかりません。\n書き方の例：国家 50 海域 30\n目安：${OPACITY_GUIDE}`);
-        // 「レイヤー」と「画像2」〜「画像10」の欄（どの欄も | で区切って複数枚にできる）
-        const typed = ['layers', ...Array.from({ length: MAX_SETS - 1 }, (_, i) => `layers${i + 2}`)]
-          .map((n) => String(optionValue(interaction.data, n) || '').trim())
-          .filter(Boolean)
-          .join(' | ');
-        // レイヤーを打たなかったときは選択メニューを出す（自分にだけ見える）
-        if (!splitNames(typed.replace(SET_SEP, ' ')).length) {
-          const layers = v.config.layers || [];
-          const ops = Object.fromEntries(Object.entries(op.values).map(([n, val]) => [layers.findIndex((l) => l.name === n), val]));
-          const m = menu(data, { v, sel: defaultIndexes(v.config), ops, sets: [], priv });
-          if (d.note) m.content = `${d.note}\n\n${m.content}`;
-          return json({ type: 4, data: m });
-        }
-        const parts = splitSets(typed).filter((p) => splitNames(p).length);
-        if (parts.length > MAX_SETS) return ephemeral(`一度に送れる地図は ${MAX_SETS} 枚までです。`);
-        const sets = [];
-        let label = '';
-        for (const p of parts) {
-          // 組み合わせごとに「@10/26」で日付を変えられる
-          const at = p.match(/[@＠]\s*([^\s|｜]+(?:\s+\d{1,2}[:：]\d{2})?)/);
-          let pv = v;
-          if (at) {
-            const r2 = resolveDate(data, at[1]);
-            if (r2.error) return ephemeral(r2.error);
-            pv = r2.v;
-          }
-          const words = at ? p.replace(at[0], ' ') : p;
-          const r = resolveLayers(pv.config, words);
-          if (r.unknown) {
-            const list = (pv.config.layers || []).map((l) => `「${l.name}」`).join(' ');
-            return ephemeral(`${pv.date ? `${vName(pv)}の地図に` : ''}レイヤー ${r.unknown.map((u) => `「${u}」`).join('')} が見つかりません。\n使えるレイヤー: ${list}`);
-          }
-          sets.push({ names: r.names, date: pv.date ? pv.key : '' });
-          label = r.label;
-        }
-        if (sets.every((s) => !s.names.length) && !v.config.base?.src) return ephemeral('表示するレイヤーがありません。');
-        ctx.waitUntil(startRender(env, interaction, { sets, opacity: op.values, label: sets.length === 1 ? label : '', priv }));
-        return deferred(priv); // 考え中…（Actions が完成した地図に差し替える）
+      if (interaction.type === 2 && interaction.data?.name === 'map') {
+        const topic = optionValue(interaction.data, 'help');
+        // /地図 使い方 → ヘルプ（自分にだけ見える）
+        if (topic) return json({ type: 4, data: helpMessage(env, data, topic) });
+        // /地図 → 選択メニュー（自分にだけ見える）
+        const v = data.versions[0];
+        return json({ type: 4, data: menu(data, { v, sel: defaultIndexes(v.config), ops: {}, sets: [], priv: false }) });
       }
 
       if (interaction.type === 5 && interaction.data?.custom_id === 'opmodal') { // 透明度の入力
@@ -575,6 +575,13 @@ export default {
 
       if (interaction.type === 3) { // 選択メニューの操作
         const id = interaction.data?.custom_id || '';
+        // ヘルプの操作
+        if (id === 'help') return json({ type: 7, data: helpMessage(env, data, interaction.data.values?.[0]) });
+        if (id.startsWith('help:')) return json({ type: 4, data: helpMessage(env, data, id.slice(5)) });  // メニューから新しく開く
+        if (id === 'openmenu') {
+          const v = data.versions[0];
+          return json({ type: 4, data: menu(data, { v, sel: defaultIndexes(v.config), ops: {}, sets: [], priv: false }) });
+        }
         // 以前のメニューの操作には、新しいメニューを出し直す
         if (/^(make:|pick:|date:|all:|def:|preset:)/.test(id)) {
           const v = versionByKey(data, id.split(':')[1]);
