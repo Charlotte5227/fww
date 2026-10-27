@@ -64,7 +64,7 @@
   "display": {
     "defaultMode": "flat",
     "autoRotate": false,
-    "rotateSpeed": 6,
+    "rotateSpeed": 21,
     "shading": 0.55,
     "startAngle": 180
   }
