@@ -25,6 +25,30 @@ def load_config():
         return json.load(f)
 
 
+WEEK = "月火水木金土日"
+
+
+def long_date(d):
+    from datetime import date
+    y, m, dd = (int(x) for x in d.split("-"))
+    return f"{y}年{m}月{dd}日（{WEEK[date(y, m, dd).weekday()]}）"
+
+
+def config_for_date(date):
+    """空なら最新（config.json）、日付なら history.json のその日の記録"""
+    if not date:
+        return load_config()
+    path = ROOT / "data" / "history.json"
+    if not path.exists():
+        raise ValueError("履歴（data/history.json）がありません")
+    with open(path, encoding="utf-8") as f:
+        entries = json.load(f).get("entries", [])
+    for e in entries:
+        if e.get("date") == date:
+            return e["config"]
+    raise ValueError(f"{long_date(date)}の記録が見つかりません")
+
+
 def pick_layers(config, names):
     """names が None なら初期表示のレイヤー。重なり順は config の順"""
     layers = config.get("layers", [])
@@ -115,13 +139,12 @@ def edit_original(app_id, token, content, png=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--render", help="手元で確認する場合のレイヤー名（空白区切り。空文字なら初期表示）")
+    ap.add_argument("--date", default="", help="日付（YYYY-MM-DD）。省略すると最新")
     ap.add_argument("--out", default="map.png")
     args = ap.parse_args()
 
-    config = load_config()
-    title = config.get("title") or "地図"
-
     if args.render is not None:
+        config = config_for_date(args.date)
         names = args.render.split() or None
         data, size, _ = encode_png(compose(config, pick_layers(config, names)))
         Path(args.out).write_bytes(data)
@@ -133,6 +156,9 @@ def main():
     app_id, token = dest["a"], dest["t"]
     label = os.environ.get("LABEL", "")
     try:
+        date = os.environ.get("MAP_DATE", "").strip()
+        config = config_for_date(date)
+        title = config.get("title") or "地図"
         raw = os.environ.get("LAYERS", "").strip()
         names = json.loads(raw) if raw else None
         layers = pick_layers(config, names)
@@ -140,7 +166,8 @@ def main():
         shown = "・".join(l["name"] for l in layers) or "下地のみ"
         note = f"\n（大きいため {round(scale * 100)}% に縮小しています）" if scale < 1 else ""
         head = f"**{title}**｜{label}" if label and label != shown else f"**{title}**"
-        edit_original(app_id, token, f"{head}\nレイヤー: {shown}{note}", data)
+        when = f"{long_date(date)}の地図" if date else "最新の地図"
+        edit_original(app_id, token, f"{head}\n{when}｜レイヤー: {shown}{note}", data)
         print(f"posted {size[0]}x{size[1]} {len(data) / 1e6:.1f}MB")
     except Exception as e:  # 失敗しても「考え中…」のままにしない
         edit_original(app_id, token, f"地図を作成できませんでした: {e}")

@@ -1,0 +1,46 @@
+# Discord の /地図 コマンドから起動され、地図を合成して投稿する
+name: Discord 地図
+run-name: "Discord 地図: ${{ inputs.date || '最新' }} ${{ inputs.label }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      layers:
+        description: レイヤー名（JSON の配列。空なら初期表示）
+        required: false
+        default: ""
+      date:
+        description: 日付（YYYY-MM-DD。空なら最新）
+        required: false
+        default: ""
+      label:
+        description: 表示用の説明
+        required: false
+        default: ""
+      payload:
+        description: 返信先（暗号化済み）
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            data
+            tools
+      - name: 準備
+        run: pip install --quiet --disable-pip-version-check pillow cryptography requests
+      - name: 地図を作って Discord に送る
+        env:
+          LAYERS: ${{ inputs.layers }}
+          LABEL: ${{ inputs.label }}
+          MAP_DATE: ${{ inputs.date }}
+          PAYLOAD: ${{ inputs.payload }}
+          DISCORD_SHARED_SECRET: ${{ secrets.DISCORD_SHARED_SECRET }}
+        run: python tools/discord_map.py

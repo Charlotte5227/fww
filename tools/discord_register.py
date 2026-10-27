@@ -24,7 +24,16 @@ COMMAND = {
             },
             "required": False,
             "autocomplete": True,
-        }
+        },
+        {
+            "type": 3,
+            "name": "date",
+            "name_localizations": {"ja": "日付"},
+            "description": "Date of the map, e.g. 2026-10-26 (default: latest)",
+            "description_localizations": {"ja": "地図の日付（例：2026-10-26、10/26。省略すると最新）"},
+            "required": False,
+            "autocomplete": True,
+        },
     ],
 }
 

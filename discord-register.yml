@@ -1,0 +1,22 @@
+# Discord に /地図 コマンドを登録する（最初に 1 回だけ手動で実行）
+name: Discord コマンド登録
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: tools
+      - run: pip install --quiet --disable-pip-version-check requests
+      - name: コマンドを登録
+        env:
+          DISCORD_APP_ID: ${{ secrets.DISCORD_APP_ID }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+        run: python tools/discord_register.py
