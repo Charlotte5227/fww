@@ -3,7 +3,7 @@
   "title": "FWW世界地図",
   "base": {
     "name": "1000003303",
-    "src": "data/images/mvqw37d49jhpn.png"
+    "src": "data/images/mvqwbpog11m8n.png"
   },
   "layers": [
     {
@@ -23,7 +23,7 @@
     {
       "id": "mvotd7pxsenwo",
       "name": "国家",
-      "src": "data/images/mvqu7q0juv1vg.png",
+      "src": "data/images/mvqsfqfcmv9hv.png",
       "visible": true,
       "opacity": 1
     },
@@ -51,7 +51,7 @@
     {
       "id": "mvot9bwdj6nj4",
       "name": "国名",
-      "src": "data/images/mvot9bwcx4v5m.png",
+      "src": "data/images/mvqs4czbrx407.png",
       "visible": true,
       "opacity": 1
     }
