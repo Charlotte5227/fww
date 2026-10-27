@@ -2,6 +2,84 @@
   "version": 2,
   "entries": [
     {
+      "id": "mvqs0x55t39qp",
+      "date": "2026-10-27",
+      "time": "23:24",
+      "savedAt": "2026-10-27T14:24:15.304Z",
+      "memo": "",
+      "config": {
+        "version": 1,
+        "title": "FWW世界地図",
+        "base": {
+          "name": "無題410_修復済み2.2026.10.19-16.57_20261026144",
+          "src": "data/images/mvou7hswgwx70.png"
+        },
+        "layers": [
+          {
+            "id": "mvot6b5uaznt5",
+            "name": "白地",
+            "src": "data/images/mvota01dqwemr.png",
+            "visible": true,
+            "opacity": 1
+          },
+          {
+            "id": "mvow7uta9qt8h",
+            "name": "地形",
+            "src": "data/images/mvow7ut9rwkum.png",
+            "visible": false,
+            "opacity": 1
+          },
+          {
+            "id": "mvotd7pxsenwo",
+            "name": "国家",
+            "src": "data/images/mvotr6kxczti2.png",
+            "visible": true,
+            "opacity": 1
+          },
+          {
+            "id": "mvot6v5mca465",
+            "name": "プロビ",
+            "src": "data/images/mvot6v5mo3oo7.png",
+            "visible": true,
+            "opacity": 1
+          },
+          {
+            "id": "mvot7gdl4f53w",
+            "name": "空域",
+            "src": "data/images/mvot7gdlz2uoy.png",
+            "visible": false,
+            "opacity": 1
+          },
+          {
+            "id": "mvot8qaz85cmh",
+            "name": "海域",
+            "src": "data/images/mvotrezvhbpp4.png",
+            "visible": false,
+            "opacity": 1
+          },
+          {
+            "id": "mvot9bwdj6nj4",
+            "name": "国名",
+            "src": "data/images/mvot9bwcx4v5m.png",
+            "visible": true,
+            "opacity": 1
+          }
+        ],
+        "background": {
+          "src": "data/images/mvotuoy3ulbtr.png",
+          "color": "#141a2e",
+          "fit": "cover"
+        },
+        "display": {
+          "defaultMode": "flat",
+          "autoRotate": false,
+          "rotateSpeed": 6,
+          "shading": 0.55,
+          "startAngle": 180
+        }
+      }
+    },
+    {
       "id": "mvqrzgxte77ka",
       "date": "2026-10-27",
       "time": "23:23",
@@ -81,8 +159,8 @@
     },
     {
       "id": "2026-10-26",
-      "date": "2026-10-25",
-      "time": "15:46",
+      "date": "2026-10-26",
+      "time": "08:14",
       "savedAt": "2026-10-26T06:46:51Z",
       "memo": "",
       "config": {
