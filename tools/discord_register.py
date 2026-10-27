@@ -18,9 +18,9 @@ COMMAND = {
             "type": 3,
             "name": "layers",
             "name_localizations": {"ja": "レイヤー"},
-            "description": "Layer names separated by spaces (default: layers shown on open)",
+            "description": "Layer names separated by spaces (leave empty to open a picker)",
             "description_localizations": {
-                "ja": "レイヤー名（空白区切りで複数可。「すべて」で全レイヤー。省略すると初期表示のレイヤー）"
+                "ja": "レイヤー名（空白区切りで複数可。「すべて」で全レイヤー。省略すると選択メニューが開きます）"
             },
             "required": False,
             "autocomplete": True,
