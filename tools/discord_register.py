@@ -25,6 +25,18 @@ COMMAND = {
             "required": False,
             "autocomplete": True,
         },
+        *[
+            {
+                "type": 3,
+                "name": f"layers{n}",
+                "name_localizations": {"ja": f"画像{n}"},
+                "description": f"Layers for image {n} (sent together)",
+                "description_localizations": {"ja": f"{n}枚目の地図のレイヤー（空白区切り。まとめて送られます）"},
+                "required": False,
+                "autocomplete": True,
+            }
+            for n in range(2, 11)
+        ],
         {
             "type": 3,
             "name": "date",

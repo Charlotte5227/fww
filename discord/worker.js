@@ -162,8 +162,8 @@ function resolveDate(data, input) {
 }
 
 const splitNames = (s) => String(s || '').split(/[\s,、，・]+/).map((x) => x.trim()).filter(Boolean);
-// 「白地 国家 | 地形 国名」のように、組み合わせを | や / で区切る
-const SET_SEP = /[|｜/／;；]/;
+// 「白地 国家 | 地形 国名」のように、組み合わせを | で区切る（/ は日付に使うので区切りにしない）
+const SET_SEP = /[|｜;；]/;
 const splitSets = (s) => String(s || '').split(SET_SEP).map((x) => x.trim());
 const optionValue = (data, name) => (data.options || []).find((o) => o.name === name)?.value;
 
@@ -295,7 +295,14 @@ function readState(data, interaction) {
   const v = versionByKey(data, key);
   const sel = (find('pick')?.options || []).filter((o) => o.default).map((o) => Number(o.value));
   const ops = decodeOps((find('op:')?.custom_id || 'op:').slice(3));
-  const sets = (find('add:')?.custom_id || 'add:').slice(4).split(',').filter(Boolean).map(idxOf);
+  // 取っておいた組み合わせは「外す」選択欄の項目に、日付と一緒に書いてある（値は 番号|日付の key|レイヤー）
+  let sets = (find('sets')?.options || []).map((o) => {
+    const [, k, mask] = String(o.value).split('|');
+    return { v: versionByKey(data, k), idx: idxOf(mask) };
+  });
+  // 以前のメニュー（日付なし）で取っておいたもの
+  const oldAdd = find('add:');
+  if (!sets.length && oldAdd) sets = oldAdd.custom_id.slice(4).split(',').filter(Boolean).map((m) => ({ v, idx: idxOf(m) }));
   const priv = (find('priv:')?.custom_id || 'priv:0') === 'priv:1';
   return { v, sel, ops, sets, priv };
 }
@@ -303,12 +310,18 @@ function readState(data, interaction) {
 const namesOf = (v, idx) => idx.filter((i) => i < (v.config.layers || []).length).sort((a, b) => a - b).map((i) => v.config.layers[i].name);
 const opacityOf = (v, ops, i) => (ops[i] ?? Math.round((v.config.layers[i]?.opacity ?? 1) * 100));
 const sameSet = (a, b) => a.length === b.length && a.every((x, i) => x === [...b].sort((p, q) => p - q)[i]);
+const sameEntry = (a, b) => a.v.key === b.v.key && sameSet([...a.idx].sort((p, q) => p - q), b.idx);
+const shortName = (v) => {
+  if (!v.date) return '最新';
+  const m = ymdRe.exec(v.date);
+  return m ? `${+m[2]}/${+m[3]}${v.time ? ` ${v.time}` : ''}` : v.date;
+};
 
-/** 送る組み合わせ：取っておいたもの＋今の選択（同じものは 1 枚） */
+/** 送る組み合わせ：取っておいたもの＋今の選択（同じものは 1 枚）。{ v, idx, current } の並び */
 function setsToSend(st) {
-  const cur = [...st.sel].sort((a, b) => a - b);
-  const list = st.sets.map((s) => [...s].sort((a, b) => a - b));
-  if (!list.some((s) => sameSet(s, cur))) list.push(cur);
+  const list = st.sets.map((s) => ({ v: s.v, idx: [...s.idx].sort((a, b) => a - b) }));
+  const cur = { v: st.v, idx: [...st.sel].sort((a, b) => a - b), current: true };
+  if (!list.some((s) => sameEntry(s, cur))) list.push(cur);
   return list.slice(0, MAX_SETS);
 }
 
@@ -316,8 +329,12 @@ function menu(data, st) {
   const { v } = st;
   const layers = v.config.layers || [];
   const sel = [...new Set(st.sel)].filter((i) => i >= 0 && i < layers.length).sort((a, b) => a - b);
-  const sets = st.sets.map((s) => s.filter((i) => i < layers.length)).slice(0, MAX_SETS - 1);
+  const sets = st.sets
+    .map((s) => ({ v: s.v, idx: s.idx.filter((i) => i < (s.v.config.layers || []).length) }))
+    .slice(0, MAX_SETS - 1);
   const ops = Object.fromEntries(Object.entries(st.ops).filter(([i, val]) => i < layers.length && val !== Math.round((layers[i].opacity ?? 1) * 100)));
+  const dated = data.versions.length > 1;
+  const label = (s) => `${namesOf(s.v, s.idx).join('・') || '（下地だけ）'}${dated ? `（${shortName(s.v)}）` : ''}`;
   // 閲覧ページと同じく、手前に重なるレイヤーから並べる
   const options = layers
     .map((l, i) => ({ label: String(l.name || `レイヤー${i + 1}`).slice(0, 100), value: String(i), default: sel.includes(i) }))
@@ -325,7 +342,7 @@ function menu(data, st) {
     .slice(0, 25);
 
   const rows = [];
-  if (data.versions.length > 1) {
+  if (dated) {
     rows.push({
       type: 1,
       components: [{
@@ -344,12 +361,12 @@ function menu(data, st) {
   if (options.length) {
     rows.push({ type: 1, components: [{ type: 3, custom_id: 'pick', placeholder: 'レイヤーを選ぶ（複数可）', min_values: 0, max_values: options.length, options }] });
   }
-  const sending = setsToSend({ sel, sets });
+  const sending = setsToSend({ v, sel, sets });
   rows.push({
     type: 1,
     components: [
       { type: 2, style: 1, custom_id: 'make', label: sending.length > 1 ? `地図を作る（${sending.length}枚）` : '地図を作る' },
-      { type: 2, style: 2, custom_id: `add:${sets.map(maskOf).join(',')}`, label: '組み合わせを追加', disabled: sets.length >= MAX_SETS - 1 },
+      { type: 2, style: 2, custom_id: 'add', label: '組み合わせを追加', disabled: sets.length >= MAX_SETS - 1 },
       ...(options.length ? [{ type: 2, style: 2, custom_id: `op:${encodeOps(ops)}`, label: '透明度…' }] : []),
       { type: 2, style: st.priv ? 3 : 2, custom_id: `priv:${st.priv ? 1 : 0}`, label: `${st.priv ? '✅' : '⬜'} 自分だけに表示` },
     ],
@@ -364,13 +381,30 @@ function menu(data, st) {
       { type: 2, style: 4, custom_id: 'clear', label: '組み合わせを空にする', disabled: !sets.length },
     ],
   });
+  // 取っておいた組み合わせの一覧（選ぶとその組み合わせを外す）。状態の保存場所も兼ねる
+  if (sets.length) {
+    rows.push({
+      type: 1,
+      components: [{
+        type: 3,
+        custom_id: 'sets',
+        placeholder: '取っておいた組み合わせを外す（選んだものを外します）',
+        min_values: 1,
+        max_values: sets.length,
+        options: sets.map((s, i) => ({
+          label: `${CIRCLED[i]} ${label(s)}`.slice(0, 100),
+          value: `${i}|${s.v.key}|${maskOf(s.idx)}`,
+        })),
+      }],
+    });
+  }
 
   const lines = ['地図に重ねるレイヤーを選んで（複数可）、「地図を作る」を押してください。下地はいつも含まれます。'];
-  lines.push('「組み合わせを追加」で今の選択を取っておくと、別々のレイヤーの地図をまとめて送れます。', '');
-  if (data.versions.length > 1) lines.push(`**日付**：${vName(v)}${v.date && v.memo ? `・${v.memo}` : ''}`);
+  lines.push(`「組み合わせを追加」で今の選択を取っておくと、別々のレイヤー${dated ? 'や日付' : ''}の地図をまとめて送れます。`, '');
+  if (dated) lines.push(`**日付**：${vName(v)}${v.date && v.memo ? `・${v.memo}` : ''}`);
   if (sets.length) {
     lines.push('**送る組み合わせ**：');
-    sending.forEach((s, i) => lines.push(`${CIRCLED[i]} ${namesOf(v, s).join('・') || '（下地だけ）'}${i === sending.length - 1 && !sets.some((x) => sameSet(x, s)) ? '　← 今の選択' : ''}`));
+    sending.forEach((s, i) => lines.push(`${CIRCLED[i]} ${label(s)}${s.current ? '　← 今の選択' : ''}`));
   } else {
     lines.push(`**選択中**：${sel.length ? namesOf(v, sel).join('・') : '（なし。下地だけになります）'}`);
   }
@@ -385,7 +419,8 @@ function opacityModal(st) {
   const { v } = st;
   const layers = v.config.layers || [];
   // 選んでいるレイヤー（なければ全部）を、手前のものから並べる
-  const used = new Set([...st.sel, ...st.sets.flat()]);
+  const usedNames = new Set(st.sets.flatMap((x) => namesOf(x.v, x.idx)));
+  const used = new Set([...st.sel, ...layers.map((l, i) => (usedNames.has(l.name) ? i : -1)).filter((i) => i >= 0)]);
   const idx = layers.map((_, i) => i).filter((i) => !used.size || used.has(i)).reverse();
   const value = [
     '# 0〜100 の数字を書き換えてください',
@@ -415,12 +450,16 @@ function whoName(interaction) {
 }
 
 /**
- * Actions を起動する。sets はレイヤー名の配列の配列、opacity は { レイヤー名: 0〜100 }
+ * Actions を起動する。sets は { names: レイヤー名の配列, date: 記録の key（最新は ''） } の配列、opacity は { レイヤー名: 0〜100 }
  */
-async function startRender(env, interaction, { sets, opacity = {}, label, date = '', priv = false }) {
+async function startRender(env, interaction, { sets, opacity = {}, label, priv = false }) {
   const sealed = await seal({ t: interaction.token, a: interaction.application_id, e: priv ? 1 : 0 }, env.SHARED_SECRET);
-  // 1 枚・透明度の変更なしなら、以前と同じ形で送る
-  const layers = sets.length === 1 && !Object.keys(opacity).length ? sets[0] : { sets, opacity };
+  // 全部同じ日付なら日付は 1 つだけ送る。1 枚・透明度の変更なしなら、以前と同じ形で送る
+  const dates = [...new Set(sets.map((x) => x.date))];
+  const date = dates.length === 1 ? dates[0] : '';
+  const layers = sets.length === 1 && !Object.keys(opacity).length
+    ? sets[0].names
+    : { sets: dates.length === 1 ? sets.map((x) => x.names) : sets.map((x) => ({ date: x.date, layers: x.names })), opacity };
   const inputs = { layers: JSON.stringify(layers), label, payload: sealed };
   if (date) inputs.date = date;  // 最新のときは送らない（古いワークフローでも動くように）
   const res = await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/${WORKFLOW}/dispatches`, {
@@ -472,7 +511,7 @@ export default {
         const r = resolveDate(data, optionValue(interaction.data, 'date'));
         const config = (r.v || data.versions[0]).config;
         if (focused === 'opacity') return choicesResponse(opacityChoices(config, optionValue(interaction.data, 'opacity')));
-        return choicesResponse(layerChoices(config, optionValue(interaction.data, 'layers')));
+        return choicesResponse(layerChoices(config, optionValue(interaction.data, focused || 'layers')));
       }
 
       if (interaction.type === 2 && interaction.data?.name === 'map') { // /地図
@@ -482,7 +521,11 @@ export default {
         const priv = optionValue(interaction.data, 'private') === true;
         const op = parseOpacity(v.config, optionValue(interaction.data, 'opacity'));
         if (op.unknown.length) return ephemeral(`透明度：レイヤー ${op.unknown.map((u) => `「${u}」`).join('')} が見つかりません。\n書き方の例：国家 50 海域 30\n目安：${OPACITY_GUIDE}`);
-        const typed = String(optionValue(interaction.data, 'layers') || '');
+        // 「レイヤー」と「画像2」〜「画像10」の欄（どの欄も | で区切って複数枚にできる）
+        const typed = ['layers', ...Array.from({ length: MAX_SETS - 1 }, (_, i) => `layers${i + 2}`)]
+          .map((n) => String(optionValue(interaction.data, n) || '').trim())
+          .filter(Boolean)
+          .join(' | ');
         // レイヤーを打たなかったときは選択メニューを出す（自分にだけ見える）
         if (!splitNames(typed.replace(SET_SEP, ' ')).length) {
           const layers = v.config.layers || [];
@@ -494,17 +537,27 @@ export default {
         const parts = splitSets(typed).filter((p) => splitNames(p).length);
         if (parts.length > MAX_SETS) return ephemeral(`一度に送れる地図は ${MAX_SETS} 枚までです。`);
         const sets = [];
+        let label = '';
         for (const p of parts) {
-          const r = resolveLayers(v.config, p);
-          if (r.unknown) {
-            const list = (v.config.layers || []).map((l) => `「${l.name}」`).join(' ');
-            return ephemeral(`${v.date ? `${vName(v)}の地図に` : ''}レイヤー ${r.unknown.map((u) => `「${u}」`).join('')} が見つかりません。\n使えるレイヤー: ${list}`);
+          // 組み合わせごとに「@10/26」で日付を変えられる
+          const at = p.match(/[@＠]\s*([^\s|｜]+(?:\s+\d{1,2}[:：]\d{2})?)/);
+          let pv = v;
+          if (at) {
+            const r2 = resolveDate(data, at[1]);
+            if (r2.error) return ephemeral(r2.error);
+            pv = r2.v;
           }
-          sets.push(r.names);
+          const words = at ? p.replace(at[0], ' ') : p;
+          const r = resolveLayers(pv.config, words);
+          if (r.unknown) {
+            const list = (pv.config.layers || []).map((l) => `「${l.name}」`).join(' ');
+            return ephemeral(`${pv.date ? `${vName(pv)}の地図に` : ''}レイヤー ${r.unknown.map((u) => `「${u}」`).join('')} が見つかりません。\n使えるレイヤー: ${list}`);
+          }
+          sets.push({ names: r.names, date: pv.date ? pv.key : '' });
+          label = r.label;
         }
-        if (sets.every((s) => !s.length) && !v.config.base?.src) return ephemeral('表示するレイヤーがありません。');
-        const label = sets.length === 1 ? resolveLayers(v.config, parts[0]).label : '';
-        ctx.waitUntil(startRender(env, interaction, { sets, opacity: op.values, label, date: v.date ? v.key : '', priv }));
+        if (sets.every((s) => !s.names.length) && !v.config.base?.src) return ephemeral('表示するレイヤーがありません。');
+        ctx.waitUntil(startRender(env, interaction, { sets, opacity: op.values, label: sets.length === 1 ? label : '', priv }));
         return deferred(priv); // 考え中…（Actions が完成した地図に差し替える）
       }
 
@@ -538,25 +591,35 @@ export default {
             const j = (nv.config.layers || []).findIndex((l) => l.name === layers[i]?.name);
             if (j >= 0) ops[j] = val;
           }
-          return json({ type: 7, data: menu(data, { ...st, v: nv, sel: map(st.sel), sets: st.sets.map(map), ops }) });
+          // 取っておいた組み合わせは、それぞれの日付のまま
+          return json({ type: 7, data: menu(data, { ...st, v: nv, sel: map(st.sel), ops }) });
         }
         if (id === 'pick') return json({ type: 7, data: menu(data, { ...st, sel: (interaction.data.values || []).map(Number) }) });
         if (id === 'all') return json({ type: 7, data: menu(data, { ...st, sel: layers.map((_, i) => i) }) });
         if (id === 'def') return json({ type: 7, data: menu(data, { ...st, sel: defaultIndexes(st.v.config) }) });
-        if (id.startsWith('add:')) {
-          const cur = [...st.sel].sort((a, b) => a - b);
-          const sets = st.sets.some((s) => sameSet(s, cur)) ? st.sets : [...st.sets, cur];
+        if (id === 'add' || id.startsWith('add:')) {
+          const cur = { v: st.v, idx: [...st.sel].sort((a, b) => a - b) };
+          const sets = st.sets.some((s) => sameEntry(s, cur)) ? st.sets : [...st.sets, cur];
           return json({ type: 7, data: menu(data, { ...st, sets }) });
+        }
+        if (id === 'sets') {  // 選んだ組み合わせを外す
+          const drop = new Set((interaction.data.values || []).map((x) => Number(String(x).split('|')[0])));
+          return json({ type: 7, data: menu(data, { ...st, sets: st.sets.filter((_, i) => !drop.has(i)) }) });
         }
         if (id === 'clear') return json({ type: 7, data: menu(data, { ...st, sets: [] }) });
         if (id.startsWith('priv:')) return json({ type: 7, data: menu(data, { ...st, priv: !st.priv }) });
         if (id.startsWith('op:')) return json(opacityModal(st));
         if (id === 'make') {
-          const sets = setsToSend(st).map((s) => namesOf(st.v, s));
-          if (sets.every((s) => !s.length) && !st.v.config.base?.src) return ephemeral('表示するレイヤーがありません。');
+          const list = setsToSend(st);
+          if (list.every((s) => !s.idx.length) && !st.v.config.base?.src) return ephemeral('表示するレイヤーがありません。');
           const opacity = Object.fromEntries(Object.entries(st.ops).map(([i, val]) => [layers[i]?.name, val]).filter(([n]) => n));
           const who = whoName(interaction);
-          ctx.waitUntil(startRender(env, interaction, { sets, opacity, label: who ? `${who} さんの選択` : '選択メニュー', date: st.v.date ? st.v.key : '', priv: st.priv }));
+          ctx.waitUntil(startRender(env, interaction, {
+            sets: list.map((s) => ({ names: namesOf(s.v, s.idx), date: s.v.date ? s.v.key : '' })),
+            opacity,
+            label: who ? `${who} さんの選択` : '選択メニュー',
+            priv: st.priv,
+          }));
           // メニューはそのまま残し、地図は新しい投稿として送る
           return deferred(st.priv);
         }

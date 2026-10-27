@@ -176,15 +176,22 @@ def edit_original(app_id, token, content, png=None):
     send(app_id, token, content, [("map.png", png)] if png is not None else ())
 
 
-def parse_request(raw):
-    """LAYERS の中身。["白地", ...]（1 枚）または {"sets": [[...], [...]], "opacity": {...}}"""
+def parse_request(raw, date=""):
+    """LAYERS の中身を (日付, レイヤー名の並び) の並びと透明度にする。
+    ["白地", ...]（1 枚）、{"sets": [[...], [...]], "opacity": {...}}、
+    または {"sets": [{"date": "...", "layers": [...]}, ...]}（組み合わせごとに日付が違う）"""
     if not raw:
-        return [None], {}
+        return [(date, None)], {}
     v = json.loads(raw)
     if isinstance(v, dict):
-        sets = v.get("sets") or [None]
-        return [s if s is not None else None for s in sets], {k: int(x) for k, x in (v.get("opacity") or {}).items()}
-    return [v], {}
+        sets = []
+        for x in v.get("sets") or [None]:
+            if isinstance(x, dict):
+                sets.append((x.get("date") or "", x.get("layers")))
+            else:
+                sets.append((date, x))
+        return sets, {k: int(n) for k, n in (v.get("opacity") or {}).items()}
+    return [(date, v)], {}
 
 
 CIRCLED = "①②③④⑤⑥⑦⑧⑨⑩"
@@ -211,18 +218,21 @@ def main():
     label = os.environ.get("LABEL", "")
     try:
         date = os.environ.get("MAP_DATE", "").strip()
-        config = config_for_date(date)
-        title = config.get("title") or "地図"
-        sets, opacity = parse_request(os.environ.get("LAYERS", "").strip())
+        sets, opacity = parse_request(os.environ.get("LAYERS", "").strip(), date)
+        dates = list(dict.fromkeys(d for d, _ in sets))
+        title = config_for_date(dates[0]).get("title") or "地図"
         images = []
-        for i, names in enumerate(sets[:10]):
+        for i, (d, names) in enumerate(sets[:10]):
+            config = config_for_date(d)
             layers = pick_layers(config, names)
             data, size, scale = encode_png(compose(config, layers, opacity))
             shown = "・".join(l["name"] for l in layers) or "下地のみ"
+            if len(dates) > 1:  # 日付が混ざっているときは、1 枚ずつ日付を書く
+                shown += f"（{entry_label(d).removesuffix('の地図')}）"
             images.append({"name": f"map{i + 1}.png" if len(sets) > 1 else "map.png", "data": data, "shown": shown, "scale": scale})
             print(f"rendered {shown}: {size[0]}x{size[1]} {len(data) / 1e6:.1f}MB")
 
-        when = entry_label(date)
+        when = entry_label(dates[0]) if len(dates) == 1 else "日付の違う地図"
         op_text = "・".join(f"{n} {v}%" for n, v in opacity.items())
         if len(images) == 1:
             im = images[0]
