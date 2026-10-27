@@ -1,6 +1,7 @@
 // 閲覧サイト
-import { Stage } from './engine.js?v=20261026-3';
-import { Dial } from './dial.js?v=20261026-3';
+import { Stage } from './engine.js?v=20261027-1';
+import { Dial } from './dial.js?v=20261027-1';
+import { SaveMenu } from './save.js?v=20261027-1';
 
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
@@ -13,8 +14,35 @@ const CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 
 let stage;
 let dial;
 let config;
+let saveMenu;
+let closeOpacityPanel = () => {};
 
 function setStatus(html) { statusEl.innerHTML = html; }
+
+let toastTimer;
+function toast(msg, { error = false } = {}) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.toggle('is-error', error);
+  t.classList.add('is-on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('is-on'), error ? 5000 : 3000);
+}
+
+/** 地図以外の表示（タイトル・レイヤー欄・操作パネルなど）を隠す／戻す */
+function setUiHidden(hidden) {
+  const btn = $('#uiBtn');
+  app.classList.toggle('ui-hidden', hidden);
+  btn.setAttribute('aria-pressed', String(hidden));
+  const label = hidden ? '表示を戻す' : '表示を隠す';
+  btn.setAttribute('aria-label', label);
+  btn.title = `${label}（H）`;
+  if (hidden) {
+    closeOpacityPanel();
+    saveMenu?.close();
+    hintEl.classList.add('is-gone');
+  }
+}
 
 function setMode(mode) {
   stage.setMode(mode);
@@ -24,6 +52,7 @@ function onMode(mode) {
   hintEl.classList.add('is-gone');
   app.classList.toggle('is-flat', mode === 'flat');
   modeBtns.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+  saveMenu?.refreshMode();
 }
 
 const SLIDERS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>';
@@ -96,11 +125,13 @@ function buildLayerUI() {
   new ResizeObserver(fitAroundPanel).observe(panel);
   narrow.addEventListener('change', fitAroundPanel);
   const openPanel = (open) => {
+    if (open) saveMenu?.close();
     panel.hidden = !open;
     tool.setAttribute('aria-expanded', String(open));
     if (open) hintEl.classList.add('is-gone');
     fitAroundPanel();
   };
+  closeOpacityPanel = () => { if (!panel.hidden) openPanel(false); };
   tool.addEventListener('click', () => openPanel(panel.hidden));
   $('#panelClose').onclick = () => { openPanel(false); tool.focus(); };
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !panel.hidden) { openPanel(false); tool.focus(); } });
@@ -214,6 +245,7 @@ async function main() {
   const disp = config.display || {};
 
   await stage.load(config);
+  saveMenu = new SaveMenu({ stage, config, toast, onOpen: () => { closeOpacityPanel(); hintEl.classList.add('is-gone'); } });
   buildLayerUI();
   dial.set(stage.angle);
 
@@ -229,8 +261,10 @@ async function main() {
   modeBtns.forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
   autoBtn.addEventListener('click', () => stage.setAutoRotate(!stage.autoRotate));
   $('#resetBtn').addEventListener('click', () => stage.resetView());
+  $('#uiBtn').addEventListener('click', () => setUiHidden(!app.classList.contains('ui-hidden')));
   window.addEventListener('keydown', (e) => {
     if (e.target.closest('input, textarea, [role="slider"]')) return;
+    if ((e.key === 'h' || e.key === 'H') && !e.ctrlKey && !e.metaKey && !e.altKey) setUiHidden(!app.classList.contains('ui-hidden'));
     if (e.key === 'ArrowLeft') { stage.setAutoRotate(false); stage.nudge(-20); }
     if (e.key === 'ArrowRight') { stage.setAutoRotate(false); stage.nudge(20); }
   });

@@ -58,6 +58,27 @@ svg { display: block; }
   min-width: 0;
 }
 
+.top-right { flex: none; display: flex; align-items: center; gap: 8px; }
+.round-btn {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--paper);
+  cursor: pointer;
+  transition: background-color .2s, opacity .3s;
+}
+.round-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.round-btn .i-eye-off { display: none; }
+.round-btn[aria-pressed="true"] .i-eye { display: none; }
+.round-btn[aria-pressed="true"] .i-eye-off { display: block; }
+
 .mode-switch {
   flex: none;
   display: flex;
@@ -294,7 +315,9 @@ button.chip { font: inherit; color: var(--paper); }
 #autoBtn[aria-pressed="true"] .i-play { display: none; }
 
 .dial {
+  flex: 0 1 auto;
   width: min(56vw, 420px);
+  min-width: 96px;
   height: 44px;
   border-radius: 999px;
   overflow: hidden;
@@ -304,7 +327,128 @@ button.chip { font: inherit; color: var(--paper); }
 .dial canvas { width: 100%; height: 100%; display: block; }
 .dial canvas:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: -2px; border-radius: 999px; }
 
+#saveBtn[aria-expanded="true"] { background: var(--brass); color: var(--night); }
+
 button:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: 2px; }
+
+/* ---------- 画像の保存メニュー ---------- */
+.save-menu {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--safe-b) + 78px);
+  transform: translateX(-50%);
+  width: min(360px, calc(100vw - 24px));
+  max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - 200px);
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border-radius: 16px;
+  background: rgba(20, 26, 46, .86);
+  border: 1px solid var(--glass-line);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .35);
+}
+.save-menu[hidden], .save-menu [hidden] { display: none; }
+.save-main { display: flex; flex-direction: column; }
+.save-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.save-item:hover:not(:disabled) { background: rgba(238, 241, 246, .07); }
+.save-item svg { flex: none; width: 26px; height: 26px; fill: none; stroke: var(--brass-hi); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.save-item span { display: flex; flex-direction: column; min-width: 0; }
+.save-item strong { font-weight: 500; font-size: 15px; }
+.save-item small { color: var(--mist); font-size: 12.5px; line-height: 1.45; }
+.save-item:disabled { cursor: default; }
+.save-item:disabled svg, .save-item:disabled strong { opacity: .4; }
+.save-item.is-busy { pointer-events: none; }
+.save-item.is-busy svg { animation: pulse 1s ease-in-out infinite alternate; }
+@keyframes pulse { from { opacity: 1; } to { opacity: .25; } }
+
+.save-layers { display: flex; flex-direction: column; min-height: 0; }
+.save-head { display: flex; align-items: center; gap: 4px; padding: 0 0 4px; }
+.save-head h2 { margin: 0; font-size: 15px; font-weight: 700; }
+.back-btn {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.back-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.save-list { list-style: none; margin: 0; padding: 0 6px; overflow-y: auto; overscroll-behavior: contain; }
+.save-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 48px; border-top: 1px solid rgba(238, 241, 246, .08); }
+.save-list li:first-child { border-top: 0; }
+.save-list .lname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.save-list .lname small { color: var(--mist); margin-left: 6px; font-size: 12px; }
+.pill-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px 0 11px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-line);
+  background: rgba(238, 241, 246, .06);
+  cursor: pointer;
+  font-size: 14px;
+}
+.pill-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.pill-btn:hover { border-color: rgba(238, 241, 246, .3); }
+.pill-btn.is-busy { opacity: .55; pointer-events: none; }
+.save-foot { display: flex; justify-content: center; padding: 6px 6px 2px; border-top: 1px solid rgba(238, 241, 246, .08); margin-top: 2px; }
+
+/* ---------- 表示を隠す ---------- */
+.viewer .topbar .title,
+.viewer .mode-switch,
+.viewer .layerbar,
+.viewer .controls,
+.viewer .layer-panel,
+.viewer .save-menu { transition: opacity .25s ease, visibility .25s; }
+.viewer.ui-hidden .topbar .title,
+.viewer.ui-hidden .mode-switch,
+.viewer.ui-hidden .layerbar,
+.viewer.ui-hidden .controls,
+.viewer.ui-hidden .layer-panel,
+.viewer.ui-hidden .save-menu,
+.viewer.ui-hidden .hint { opacity: 0; visibility: hidden; pointer-events: none; }
+.viewer.ui-hidden #uiBtn { opacity: .55; }
+.viewer.ui-hidden #uiBtn:hover, .viewer.ui-hidden #uiBtn:focus-visible { opacity: 1; }
+
+/* ---------- お知らせ ---------- */
+.toast {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--safe-t) + 124px);
+  transform: translate(-50%, -6px);
+  max-width: calc(100vw - 32px);
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: rgba(238, 241, 246, .94);
+  color: var(--night);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s, transform .2s;
+}
+.toast.is-on { opacity: 1; transform: translate(-50%, 0); }
+.toast.is-error { background: #f3d2cb; color: #6b1f12; }
 
 /* ---------- 案内・状態 ---------- */
 .hint {
@@ -349,10 +493,13 @@ button:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: 2px; 
 
 @media (max-width: 520px) {
   .title { font-size: 15px; }
+  .top-right { gap: 6px; }
+  .round-btn { width: 46px; height: 46px; }
   .mode-switch button { padding: 0 12px 0 9px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .status .spinner { animation-duration: 3s; }
-  .hint, .cv-bg { transition: none; }
+  .hint, .cv-bg, .toast { transition: none; }
+  .save-item.is-busy svg { animation: none; opacity: .5; }
 }

@@ -208,6 +208,48 @@ export class Stage {
     this.dirty = true;
   }
 
+  /* ---------- 画像の書き出し ---------- */
+
+  /** 今のレイヤーの表示（表示／非表示・透明度）で合成した地図全体。左端・右端は元の画像のまま */
+  exportFull() {
+    this._compose();
+    return this.composite.width ? this.composite : null;
+  }
+
+  /**
+   * 平面表示で画面に映っている範囲を切り出す。
+   * 拡大中は画面の見た目どおりの解像度、縮小中は元画像の解像度で書き出す。
+   */
+  captureView({ maxSide = 8192 } = {}) {
+    this._compose();
+    const c = this.composite;
+    if (!c.width || this.mode !== 'flat') return null;
+    const s = this._flatFit() * this.flat.zoom;
+    const w = c.width * s, h = c.height * s;
+    const x0 = this.size.w / 2 - w / 2;
+    const y0 = this._flatCenterY() - h / 2 + this.flat.y;
+    const vx0 = Math.max(0, x0), vx1 = Math.min(this.size.w, x0 + w);
+    const vy0 = Math.max(0, y0), vy1 = Math.min(this.size.h, y0 + h);
+    if (vx1 <= vx0 || vy1 <= vy0) return null;
+    // 画面上の位置 → 元画像上の位置（横は回り込みを考慮）
+    const shift = ((((this.angle - 180) / 360) % 1) + 1) % 1 * w;
+    let u0 = ((vx0 - (x0 - shift)) / s) % c.width;
+    if (u0 < 0) u0 += c.width;
+    const sw = (vx1 - vx0) / s, sh = (vy1 - vy0) / s, v0 = (vy0 - y0) / s;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const k = Math.min(Math.max(1, s * dpr), maxSide / Math.max(sw, sh));
+    const out = document.createElement('canvas');
+    out.width = Math.max(1, Math.round(sw * k));
+    out.height = Math.max(1, Math.round(sh * k));
+    const ctx = out.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    const w1 = Math.min(sw, c.width - u0);
+    const split = Math.round(w1 * k);
+    ctx.drawImage(c, u0, v0, w1, sh, 0, 0, split, out.height);
+    if (sw - w1 > 1e-6) ctx.drawImage(c, 0, v0, sw - w1, sh, split, 0, out.width - split, out.height);
+    return out;
+  }
+
   /** 上下の操作パネルの分の余白（px）を変える。筒・平面とも、残りの範囲の中央に収まる */
   setPadding({ top, bottom }) {
     this.opts.flatPadding = { top, bottom };
