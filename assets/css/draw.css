@@ -357,3 +357,44 @@
 }
 
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Discord に送る */
+.discord-panel { width: min(420px, calc(100vw - 16px)); overflow-y: auto; overscroll-behavior: contain; }
+.dc-user { margin-right: auto; font-size: 12.5px; color: var(--mist); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dc-user button { background: none; border: 0; padding: 0 0 0 6px; color: var(--brass-hi); font: inherit; cursor: pointer; text-decoration: underline; }
+.dc-login p { margin: 4px 0 12px; font-size: 13.5px; line-height: 1.6; }
+.dc-login-btn, .dc-send {
+  width: 100%;
+  min-height: 46px;
+  border: 0;
+  border-radius: 12px;
+  font: 700 15px inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+.dc-login-btn { background: #5865f2; color: #fff; }
+.dc-login-btn:hover { background: #4752c4; }
+.dc-send { margin-top: 10px; background: var(--brass-hi, #e2c27a); color: #1b1608; }
+.dc-send:disabled { opacity: .45; cursor: default; }
+.dc-kind { display: flex; width: 100%; }
+.dc-kind button { flex: 1; }
+.dc-row { display: flex; gap: 6px; align-items: center; }
+.dc-select, .dc-input {
+  width: 100%;
+  min-height: 42px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-line);
+  background: rgba(238, 241, 246, .06);
+  color: var(--paper);
+  font: 500 15px inherit;
+  font-family: inherit;
+}
+.dc-select option, .dc-select optgroup { background: #1c2340; color: var(--paper); }
+#dcLayer { margin-top: 8px; }
+.dc-input { margin-top: 8px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.dc-msg { margin: 10px 0 0; font-size: 13px; line-height: 1.55; min-height: 0; }
+.dc-msg:empty { display: none; }
+.dc-msg.is-error { color: #f3b3a6; }
+.dc-msg.is-ok { color: #a8e0b2; }
+.dc-msg a { color: inherit; }

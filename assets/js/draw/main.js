@@ -1,9 +1,10 @@
 // お絵かきページ
-import { Doc, TILE, MAX_DRAW_LAYERS, newId, newCanvas, isEmpty, bumpRev } from './doc.js?v=20261028-3';
-import { Board } from './view.js?v=20261028-3';
-import { History } from './history.js?v=20261028-3';
-import { Store } from './store.js?v=20261028-3';
-import { createTools, formatLength } from './tools.js?v=20261028-3';
+import { Doc, TILE, MAX_DRAW_LAYERS, newId, newCanvas, isEmpty, bumpRev } from './doc.js?v=20261028-4';
+import { Board } from './view.js?v=20261028-4';
+import { History } from './history.js?v=20261028-4';
+import { Store } from './store.js?v=20261028-4';
+import { createTools, formatLength } from './tools.js?v=20261028-4';
+import { createDiscord } from './discord.js?v=20261028-4';
 import { safeName, stamp, canvasToBlob, loadJSZip, deliver } from '../save.js?v=20261028-1';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -130,6 +131,7 @@ async function main() {
   initColor();
   initLayers();
   initSave();
+  initDiscord();
   initMode();
   initKeys();
   selectTool('pen');
@@ -511,7 +513,7 @@ function initColor() {
 
 /* ---------- 浮いて出るパネル ---------- */
 
-const POPS = [['colorPanel', 'colorBtn'], ['layersPanel', 'layersBtn'], ['saveMenu', 'saveBtn']];
+const POPS = [['colorPanel', 'colorBtn'], ['layersPanel', 'layersBtn'], ['saveMenu', 'saveBtn'], ['discordPanel', 'saveBtn']];
 
 function togglePop(id, btnId, open) {
   const el = $(`#${id}`);
@@ -820,6 +822,15 @@ async function saveFull() {
 }
 
 async function saveView() {
+  const c = viewCanvas();
+  const f = `${fileTitle()}_お絵かき_表示範囲_${stamp()}.png`;
+  const r = await deliver(await canvasToBlob(c), f);
+  c.width = c.height = 0;
+  return done(r, f);
+}
+
+/** 画面に映っている範囲（地図の解像度のまま。拡大しているときはその細かさで） */
+function viewCanvas() {
   const { doc, board } = app;
   const v = board.visibleRect();
   const x = v.w >= doc.w ? board.cam.x - doc.w / 2 : v.x;
@@ -829,10 +840,37 @@ async function saveView() {
   const k = Math.min(Math.max(1, board.cam.s * board.size.dpr), 8192 / Math.max(w, h));
   const c = newCanvas(Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k)));
   doc.render(c.getContext('2d'), x, y, w, h, k);
-  const f = `${fileTitle()}_お絵かき_表示範囲_${stamp()}.png`;
-  const r = await deliver(await canvasToBlob(c), f);
-  c.width = c.height = 0;
-  return done(r, f);
+  return c;
+}
+
+/** Discord に送る画像 */
+async function discordImage(kind, layerId) {
+  if (kind === 'full') return { canvas: app.doc.composite(1) };
+  if (kind === 'view') return { canvas: viewCanvas() };
+  const it = saveItems().find((x) => x.layer.id === layerId);
+  if (!it) throw new Error('レイヤーが見つかりません');
+  if (it.layer.kind === 'draw') return { canvas: app.doc.layerCanvas(it.layer) };
+  const canvas = newCanvas(app.doc.w, app.doc.h);
+  canvas.getContext('2d').drawImage(it.layer.img, 0, 0, app.doc.w, app.doc.h);
+  let blob = null;
+  try { blob = await layerBlob(it); } catch { /* キャンバスから作る */ }
+  return { canvas, blob };
+}
+
+function initDiscord() {
+  const url = String(app.config.discord?.workerUrl || '').trim();
+  if (!/^https:\/\//.test(url)) return;
+  document.querySelectorAll('[data-discord]').forEach((el) => { el.hidden = false; });
+  app.discord = createDiscord({
+    worker: url,
+    makeImage: discordImage,
+    layers: () => saveItems().map((it) => ({ id: it.layer.id, name: `${it.layer.name}（${it.layer.kind === 'draw' ? 'お絵かき' : '地図'}）` })),
+    isFlat: () => !appEl.classList.contains('is-cylinder'),
+    beforeLeave: () => flushSave(),
+    open: (id, btn) => togglePop(id, btn, true),
+    toast,
+  });
+  if (app.discord.reopen) setTimeout(() => app.discord.open(), 0);
 }
 
 /* ---------- 作業の保存・再開（ZIP） ---------- */
@@ -949,6 +987,7 @@ function initSave() {
     if (act === 'full') run(item, saveFull);
     if (act === 'view') run(item, saveView);
     if (act === 'work-save') run(item, saveWork);
+    if (act === 'discord') app.discord?.open();
   });
   $('#saveZip').addEventListener('click', (e) => run(e.currentTarget, saveAllLayers));
   $('#workFile').addEventListener('change', (e) => {

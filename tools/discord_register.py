@@ -1,4 +1,4 @@
-"""Discord に /地図 コマンドを登録する（GitHub Actions の「Discord コマンド登録」から実行）。"""
+"""Discord に /地図 と /地図設定 コマンドを登録する（GitHub Actions の「Discord コマンド登録」から実行）。"""
 import json
 import os
 import sys
@@ -41,6 +41,32 @@ COMMAND = {
     ],
 }
 
+# 管理メニュー。だれにでも見えるが、権限がない人には「権限がありません」と返す。
+# パスワードの入力欄には候補を出さない（choices も autocomplete も付けない）
+SETTINGS_COMMAND = {
+    "name": "mapsettings",
+    "name_localizations": {"ja": "地図設定"},
+    "description": "Open the map admin menu for this server",
+    "description_localizations": {"ja": "このサーバーの地図の管理メニューを開きます（自分にだけ見えます）"},
+    "type": 1,
+    "contexts": [0],
+    "integration_types": [0],
+    "options": [
+        {
+            "type": 3,
+            "name": "password",
+            "name_localizations": {"ja": "パスワード"},
+            "description": "Only if you were given the password",
+            "description_localizations": {"ja": "パスワードを教えてもらっている場合だけ入力します"},
+            "required": False,
+            "max_length": 64,
+        },
+    ],
+}
+
+# Bot に必要な権限：チャンネルを見る・メッセージを送る・ファイルを添付・埋め込みリンク
+BOT_PERMISSIONS = (1 << 10) | (1 << 11) | (1 << 15) | (1 << 14)
+
 
 def main():
     app_id = os.environ.get("DISCORD_APP_ID", "").strip()
@@ -50,13 +76,14 @@ def main():
     r = requests.put(
         f"{API}/applications/{app_id}/commands",
         headers={"Authorization": f"Bot {token}", "Content-Type": "application/json"},
-        data=json.dumps([COMMAND], ensure_ascii=False).encode("utf-8"),
+        data=json.dumps([COMMAND, SETTINGS_COMMAND], ensure_ascii=False).encode("utf-8"),
         timeout=30,
     )
     if r.status_code >= 300:
         sys.exit(f"登録に失敗しました: {r.status_code} {r.text}")
     print("登録しました:", ", ".join(c["name"] for c in r.json()))
-    print(f"招待URL: https://discord.com/oauth2/authorize?client_id={app_id}&scope=applications.commands")
+    print("招待URL（お絵かきページからの送信を使うときは、Bot ごとサーバーに入れ直してください）:")
+    print(f"https://discord.com/oauth2/authorize?client_id={app_id}&scope=bot+applications.commands&permissions={BOT_PERMISSIONS}")
 
 
 if __name__ == "__main__":

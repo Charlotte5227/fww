@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
   <link rel="stylesheet" href="../assets/css/stage.css?v=20261028-1">
   <link rel="stylesheet" href="../assets/css/viewer.css?v=20261028-1">
-  <link rel="stylesheet" href="../assets/css/draw.css?v=20261028-3">
+  <link rel="stylesheet" href="../assets/css/draw.css?v=20261028-4">
 </head>
 <body>
   <main class="viewer draw" id="app">
@@ -124,6 +124,11 @@
           <span><strong>作業を再開（ZIP）</strong><small>保存したファイルを選んで続きから</small></span>
           <input type="file" id="workFile" accept=".zip,application/zip">
         </label>
+        <p class="save-section" data-discord hidden>Discord</p>
+        <button type="button" class="save-item" data-act="discord" data-discord hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5L3.5 10.5l6.5 2.5 2.5 6.5z"/><path d="M10 13l4.5-4.5"/></svg>
+          <span><strong>Discordに送る</strong><small>サーバーのチャンネルに画像を送る</small></span>
+        </button>
         <p class="save-foot-note">描いた内容は、このブラウザの中に自動で保存されています。</p>
       </div>
       <div class="save-layers" id="saveLayers" hidden>
@@ -140,6 +145,38 @@
       </div>
     </section>
 
+    <!-- Discord に送る -->
+    <section class="pop discord-panel" id="discordPanel" aria-labelledby="dcTitle" hidden>
+      <div class="pop-head">
+        <h2 id="dcTitle">Discordに送る</h2>
+        <span class="dc-user" id="dcUser"></span>
+        <button type="button" class="icon-btn small" id="dcClose" aria-label="閉じる"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <div class="dc-login" id="dcLogin" hidden>
+        <p>送るときだけ、Discord でログインします。ログインすると、あなたが参加していて、送ることが許可されているサーバーのチャンネルを選べます。</p>
+        <button type="button" class="dc-login-btn" id="dcLoginBtn">Discord でログイン</button>
+        <p class="pop-note">ログインの情報は、このブラウザの中にだけ保存されます（最長 7 日）。描いた内容はそのまま残ります。</p>
+      </div>
+      <div class="dc-main" id="dcMain" hidden>
+        <p class="pop-label">送る画像</p>
+        <div class="seg-mini dc-kind" id="dcKind" role="group" aria-label="送る画像">
+          <button type="button" data-kind="full" aria-pressed="true">地図全体</button>
+          <button type="button" data-kind="view" aria-pressed="false">表示範囲</button>
+          <button type="button" data-kind="layer" aria-pressed="false">レイヤー</button>
+        </div>
+        <select class="dc-select" id="dcLayer" aria-label="送るレイヤー" hidden></select>
+        <p class="pop-label">送り先</p>
+        <div class="dc-row">
+          <select class="dc-select" id="dcTarget" aria-label="送り先のチャンネル"></select>
+          <button type="button" class="icon-btn small" id="dcReload" aria-label="一覧を読み直す" title="一覧を読み直す"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4"/></svg></button>
+        </div>
+        <input class="dc-input" id="dcChannelId" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="チャンネル ID（例：1234567890123456789）" aria-label="チャンネル ID" hidden>
+        <p class="dc-msg" id="dcMsg" role="status" aria-live="polite"></p>
+        <button type="button" class="dc-send" id="dcSend">送信</button>
+        <p class="pop-note">本文は付かず、ファイル名に日時とあなたの Discord ID が入ります（例：10-28-142530_DiscordID-123….png）。同じ人が送れるのは 30 秒に 1 回です。</p>
+      </div>
+    </section>
+
     <div class="banner" id="banner" hidden>
       <p id="bannerText"></p>
       <div class="banner-btns">
@@ -152,6 +189,6 @@
   </main>
   <noscript><p class="noscript">このページの表示には JavaScript が必要です。</p></noscript>
   <script src="../assets/vendor/jszip.min.js" defer></script>
-  <script type="module" src="../assets/js/draw/main.js?v=20261028-3"></script>
+  <script type="module" src="../assets/js/draw/main.js?v=20261028-4"></script>
 </body>
 </html>

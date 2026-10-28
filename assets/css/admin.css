@@ -119,7 +119,7 @@ kbd { border: 1px solid var(--line); background: var(--card); }
 .field { display: block; margin: 0 0 14px; }
 .field > span:first-child { display: block; font-size: 13px; color: var(--ink-2); margin-bottom: 5px; }
 .field output { color: var(--ink); font-weight: 500; margin-left: 4px; }
-input:not([type]), input[type="password"], input[type="text"], input[type="number"], select, .color input:not([type="color"]), .layer-name {
+input:not([type]), input[type="password"], input[type="text"], input[type="number"], input[type="url"], select, .color input:not([type="color"]), .layer-name {
   width: 100%;
   min-height: 44px;
   padding: 8px 12px;
@@ -352,7 +352,7 @@ input[type="range"] { width: 100%; accent-color: var(--brass-deep); height: 32px
 }
 @media (max-width: 480px) {
   /* iOS で入力時に画面が拡大されないよう 16px 以上に */
-  input:not([type]), input[type="password"], input[type="text"], input[type="number"], select, .layer-name, .color input:not([type="color"]) { font-size: 16px; }
+  input:not([type]), input[type="password"], input[type="text"], input[type="number"], input[type="url"], select, .layer-name, .color input:not([type="color"]) { font-size: 16px; }
   .grid2 { grid-template-columns: 1fr; }
   .check.standalone { margin-bottom: 14px; }
   .publish { justify-content: space-between; }

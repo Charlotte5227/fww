@@ -61,6 +61,24 @@ class StackCache {
     }
   }
 
+  /** 地図の範囲の作り置きを、まだないものから 1 枚だけ作る。作ったら true */
+  warmOne(layers, level, rx, ry, rw, rh) {
+    if (StackCache.signature(layers) !== this.sig) return false;  // 表示中のものだけ
+    if (!layers.some((l) => l.visible && l.opacity > 0)) return false;
+    const W = this.doc.w, H = this.doc.h;
+    const k = 2 ** -level, span = CT / k;
+    const nx = Math.ceil(W / span), ny = Math.ceil(H / span);
+    for (let j = Math.max(0, Math.floor(ry / span)); j <= Math.min(ny - 1, Math.floor((ry + rh) / span)); j++) {
+      for (let x = rx; x <= rx + rw + span; x += span) {
+        const i = Math.floor((((x % W) + W) % W) / span);
+        if (i >= nx || this.tiles.has(`${level}/${i}/${j}`)) continue;
+        this.tile(layers, level, i, j, span, k);
+        return true;
+      }
+    }
+    return false;
+  }
+
   /** すでにある粗い解像度の作り置きのうち、地図の点 (mx, my) を含むもの */
   coarser(level, mx, my) {
     for (let lv = level + 1; lv <= 6; lv++) {
@@ -261,15 +279,51 @@ export class Board {
     this.drawOverlay();
   }
 
+  segments() {
+    const layers = this.doc.layers;
+    const ai = layers.findIndex((l) => l.id === this.doc.activeId && l.kind === 'draw');
+    return { ai, below: ai < 0 ? layers : layers.slice(0, ai), above: ai < 0 ? [] : layers.slice(ai + 1) };
+  }
+
+  /** 画面に必要な細かさ以上で、いちばん小さい解像度 */
+  levelFor(S) { return clamp(Math.floor(-Math.log2(Math.max(S, 1e-6)) + 1e-9), 0, 6); }
+
+  /**
+   * 手が空いているときに、拡大したときに使う作り置きを先に作っておく
+   * （拡大した瞬間に作ると引っかかるため）。画面の中央付近の、1 段細かい分だけ。
+   */
+  scheduleWarm() {
+    clearTimeout(this.warmTimer);
+    this.warmTimer = setTimeout(() => {
+      const idle = window.requestIdleCallback || ((f) => setTimeout(() => f(), 60));
+      const S = this.cam.s * this.size.dpr;
+      const level = this.levelFor(S);
+      if (level === 0 && this.warmedFull) return;
+      const target = Math.max(0, level - 1);
+      const v = this.visibleRect();
+      const w = Math.min(v.w, this.doc.w) / 2, h = v.h / 2;
+      const rx = this.cam.x - w / 2, ry = this.cam.y - h / 2;
+      const token = (this.warmToken = (this.warmToken || 0) + 1);
+      let count = 0;
+      const step = () => {
+        if (token !== this.warmToken || this.pointerActive || count >= 12) return;
+        const { below, above } = this.segments();
+        if (this.below.warmOne(below, target, rx, ry, w, h) || this.above.warmOne(above, target, rx, ry, w, h)) {
+          count++;
+          if (target === 0) this.warmedFull = true;
+          idle(step);
+        }
+      };
+      idle(step);
+    }, 400);
+  }
+
   /** 下の作り置き → 描き込み先のレイヤー（描いている最中も軽いようにタイルで） → 上の作り置き */
   drawStack(ctx, rx, ry, rw, rh, S) {
     const doc = this.doc;
     const layers = doc.layers;
-    const ai = layers.findIndex((l) => l.id === doc.activeId && l.kind === 'draw');
-    const below = ai < 0 ? layers : layers.slice(0, ai);
-    const above = ai < 0 ? [] : layers.slice(ai + 1);
-    // 画面に必要な細かさ以上で、いちばん小さい解像度
-    const level = clamp(Math.floor(-Math.log2(Math.max(S, 1e-6)) + 1e-9), 0, 6);
+    const { ai, below, above } = this.segments();
+    const level = this.levelFor(S);
     const smooth = this.cam.s < 2;
     ctx.imageSmoothingEnabled = smooth;
     // 作り置きは画面の細かさに合わせてあるので、毎回の表示は軽い補間で十分
@@ -280,6 +334,11 @@ export class Board {
     ctx.imageSmoothingEnabled = smooth;
     this.above.draw(ctx, above, level, rx, ry, rw, rh, S);
     if (pending || this.above.pending) this.request();  // 作りかけの続きは次の回に
+    else if (level !== this.lastLevel || Math.abs(this.cam.x - (this.lastWarmX ?? Infinity)) > rw / 3) {
+      this.lastLevel = level;
+      this.lastWarmX = this.cam.x;
+      this.scheduleWarm();
+    }
   }
 
   drawOverlay() {
@@ -331,6 +390,7 @@ export class Board {
 
     el.addEventListener('pointerdown', (e) => {
       el.setPointerCapture?.(e.pointerId);
+      this.pointerActive = true;
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
       this.opts.onInteract?.();
       if (pts.size === 2) {
@@ -382,7 +442,7 @@ export class Board {
       pts.delete(e.pointerId);
       if (mode === 'tool' && e.type === 'pointerup') tool()?.up?.(this.toMap(e.clientX, e.clientY), e, this);
       if (mode === 'tool' && e.type === 'pointercancel') tool()?.cancel?.(this);
-      if (pts.size === 0) { mode = null; pinch = null; el.classList.remove('is-panning'); }
+      if (pts.size === 0) { mode = null; pinch = null; el.classList.remove('is-panning'); this.pointerActive = false; this.scheduleWarm(); }
       else if (mode === 'pinch' && pts.size === 1) { mode = 'pan-wait'; }
     };
     el.addEventListener('pointerup', end);

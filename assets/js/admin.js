@@ -264,6 +264,7 @@ function renderAll() {
   $('#shading').value = d.shading;
   $('#startAngle').value = d.startAngle;
   $('#widthKm').value = d.widthKm > 0 ? d.widthKm : '';
+  $('#discordWorker').value = c.discord?.workerUrl || '';
   renderOutputs();
   renderLayers();
   renderHistory();
@@ -417,6 +418,18 @@ function bindInputs() {
     c().display.startAngle = Number(e.target.value);
     renderOutputs();
     stage.setAngle(c().display.startAngle);
+    markDirty();
+  });
+  $('#discordWorker').addEventListener('change', (e) => {
+    let v = e.target.value.trim().replace(/\/+$/, '');
+    if (v && !/^https:\/\/[^/\s]+$/.test(v)) {
+      toast('Worker の URL は https://〜.workers.dev の形で入れてください（最後の / より後ろは不要です）', { error: true });
+      e.target.value = c().discord?.workerUrl || '';
+      return;
+    }
+    e.target.value = v;
+    if (v) c().discord = { ...(c().discord || {}), workerUrl: v };
+    else delete c().discord;
     markDirty();
   });
   $('#widthKm').addEventListener('input', (e) => {

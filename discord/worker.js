@@ -4,6 +4,7 @@
 // 2. /地図 で選択メニュー、/地図 使い方 でヘルプを出す（どちらも自分にだけ見える）
 //    メニューの「地図を作る」で「考え中…」と返す（3 秒以内に返す必要があるため）
 // 3. GitHub Actions を起動し、Actions 側で地図を合成して Discord に投稿する
+// 4. お絵かきページからの送信（Discord でログイン → 送り先を選んで送る）と、/地図設定（管理メニュー）
 //
 // 必要な設定（Cloudflare の「設定」→「変数とシークレット」）
 //   DISCORD_PUBLIC_KEY  Discord アプリの Public Key
@@ -12,6 +13,7 @@
 //   GITHUB_TOKEN        （シークレット）Actions の読み書き権限を持つ GitHub のトークン
 //   SITE_URL            （任意）閲覧ページの URL。省略時は GitHub Pages の URL
 //   SHARED_SECRET       （シークレット）GitHub の DISCORD_SHARED_SECRET と同じ文字列
+//   ※ お絵かきページからの送信と /地図設定 に必要な設定は、下の「ここから：お絵かきページ…」を見てください
 
 const WORKFLOW = 'discord-map.yml';
 
@@ -453,6 +455,7 @@ const HELP = [
       '・レイヤーの表示や透明度を、その場で切り替えられます。',
       '・過去の日付の地図も見られます。',
       '・画面の範囲や地図全体を、画像として保存できます。',
+      '・右上の鉛筆ボタンから、お絵かきページ（地図に自由に描けるページ）を開けます。描いた内容は自分のブラウザの中だけに残ります。サーバーで許可されていれば、保存メニューの「Discordに送る」からこのサーバーに送れます。',
     ],
   },
 ];
@@ -535,11 +538,581 @@ async function startRender(env, interaction, { sets, opacity = {}, label, priv =
   }
 }
 
+/* =====================================================================
+ * ここから：お絵かきページからの送信と、/地図設定（管理メニュー）
+ *
+ * 追加で必要な設定（Cloudflare の「設定」→「変数とシークレット」／「バインディング」）
+ *   DISCORD_APP_ID         Discord アプリの Application ID
+ *   DISCORD_BOT_TOKEN      （シークレット）Bot の Token
+ *   DISCORD_CLIENT_SECRET  （シークレット）OAuth2 の Client Secret（Discord でログインするため）
+ *   SETTINGS               KV 名前空間のバインディング（サーバーごとの設定を保存する）
+ *   ALLOWED_ORIGINS        （任意）お絵かきページを置いているサイト。SITE_URL と違う場合だけ。カンマ区切り
+ * ===================================================================== */
+
+const API = 'https://discord.com/api/v10';
+const PERM = { ADMIN: 1n << 3n, VIEW: 1n << 10n, SEND: 1n << 11n, ATTACH: 1n << 15n };
+const ALL_PERMS = (1n << 53n) - 1n;
+const NEED = PERM.VIEW | PERM.SEND | PERM.ATTACH;
+const SEND_INTERVAL = 30;           // 同じ人が続けて送れる間隔（秒）
+const MAX_UPLOAD = 10 * 1024 * 1024; // Discord に Bot が送れる大きさ（ブーストなし）
+const LOCK_TRIES = 5;               // パスワードを続けて間違えられる回数
+const LOCK_MIN = 10;                // 間違え続けたときに使えなくなる時間（分）
+const GRANT_MIN = 30;               // パスワードで開いた管理メニューを操作できる時間（分）
+const PW_ITER = 10000;
+
+const enc = new TextEncoder();
+const b64u = (bytes) => { let s = ''; for (const b of bytes) s += String.fromCharCode(b); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+const unb64u = (s) => Uint8Array.from(atob(String(s).replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+
+/** seal の逆。開けなければ null */
+async function unseal(token, secret) {
+  try {
+    const all = unb64u(token);
+    const keyBytes = await crypto.subtle.digest('SHA-256', enc.encode(secret));
+    const key = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['decrypt']);
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: all.slice(0, 12) }, key, all.slice(12));
+    return JSON.parse(new TextDecoder().decode(pt));
+  } catch {
+    return null;
+  }
+}
+// ログイン情報などは、Actions に渡すものとは別の鍵で暗号化する
+const sessionSecret = (env) => `${env.SHARED_SECRET || ''}|draw-session`;
+
+/** Discord の API を呼ぶ。user を渡すとその人として（OAuth）、なければ Bot として */
+async function dapi(env, path, { method = 'GET', body, user, form } = {}) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const headers = { Authorization: user ? `Bearer ${user}` : `Bot ${String(env.DISCORD_BOT_TOKEN || '').trim()}` };
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    const res = await fetch(`${API}${path}`, { method, headers, body: form || (body !== undefined ? JSON.stringify(body) : undefined) });
+    if (res.status === 429 && attempt === 0) {
+      const ra = Number((await res.json().catch(() => ({}))).retry_after ?? res.headers.get('Retry-After') ?? 99);
+      if (ra <= 3) { await new Promise((r) => setTimeout(r, ra * 1000 + 100)); continue; }
+      return { status: 429, data: { retry_after: ra } };
+    }
+    const data = res.status === 204 ? null : await res.json().catch(() => null);
+    return { status: res.status, data };
+  }
+  return { status: 429, data: {} };
+}
+
+let botIdCache = '';
+async function botId(env) {
+  if (botIdCache) return botIdCache;
+  const r = await dapi(env, '/users/@me');
+  botIdCache = r.data?.id || String(env.DISCORD_APP_ID || '');
+  return botIdCache;
+}
+
+/* ---------- 権限の計算 ---------- */
+
+function basePerms(guild, member) {
+  const uid = member.user?.id;
+  if (guild.owner_id && guild.owner_id === uid) return ALL_PERMS;
+  const roles = new Map((guild.roles || []).map((r) => [r.id, BigInt(r.permissions)]));
+  let p = roles.get(guild.id) || 0n;  // @everyone
+  for (const r of member.roles || []) p |= roles.get(r) || 0n;
+  return p & PERM.ADMIN ? ALL_PERMS : p;
+}
+
+function channelPerms(guild, member, channel) {
+  const base = basePerms(guild, member);
+  if (base === ALL_PERMS) return ALL_PERMS;
+  let p = base;
+  const ow = channel.permission_overwrites || [];
+  const apply = (o) => { p = (p & ~BigInt(o.deny)) | BigInt(o.allow); };
+  const ev = ow.find((o) => o.id === guild.id);
+  if (ev) apply(ev);
+  let allow = 0n, deny = 0n;
+  for (const o of ow) if (Number(o.type) === 0 && o.id !== guild.id && (member.roles || []).includes(o.id)) { allow |= BigInt(o.allow); deny |= BigInt(o.deny); }
+  p = (p & ~deny) | allow;
+  const mine = ow.find((o) => Number(o.type) === 1 && o.id === member.user?.id);
+  if (mine) apply(mine);
+  if (!(p & PERM.VIEW)) return 0n;
+  return p;
+}
+
+const canPost = (p) => (p & NEED) === NEED;
+
+/* ---------- サーバーごとの設定（KV） ---------- */
+
+const DEFAULT_SETTINGS = {
+  enabled: false,          // お絵かきページからの送信
+  defaultChannel: '',      // 送り先の初期チャンネル
+  sendMode: 'admins',      // 送れる人：admins（管理者だけ）| all | roles | users
+  sendRoles: [],
+  sendUsers: [],
+  adminRoles: [],          // 管理メニューを使える人（サーバー管理者のほかに）
+  adminUsers: [],
+  pw: null,                // { salt, hash, iter }
+  notifyChannel: '',       // パスワードで開いたときの通知先
+  log: [],                 // [{ at, uid, name, kind }]
+};
+
+async function getSettings(env, gid) {
+  if (!env.SETTINGS) throw new Error('no-kv');
+  const raw = await env.SETTINGS.get(`guild:${gid}`, 'json');
+  return { ...DEFAULT_SETTINGS, ...(raw || {}) };
+}
+async function putSettings(env, gid, s) { await env.SETTINGS.put(`guild:${gid}`, JSON.stringify(s)); }
+
+const isAdminMember = (s, member, perms) =>
+  !!(perms & PERM.ADMIN) || (member.roles || []).some((r) => s.adminRoles.includes(r)) || s.adminUsers.includes(member.user?.id);
+
+function canSendBySettings(s, member, perms) {
+  if (isAdminMember(s, member, perms)) return true;
+  if (s.sendMode === 'all') return true;
+  if (s.sendMode === 'roles') return (member.roles || []).some((r) => s.sendRoles.includes(r));
+  if (s.sendMode === 'users') return s.sendUsers.includes(member.user?.id);
+  return false;
+}
+
+/* ---------- お絵かきページ向け：CORS とログイン ---------- */
+
+function allowedOrigins(env) {
+  const list = String(env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
+  try { const u = siteUrl(env); if (u) list.push(new URL(u).origin); } catch { /* 設定なし */ }
+  return list;
+}
+
+function cors(env, request, res) {
+  const origin = request.headers.get('Origin');
+  const h = new Headers(res.headers);
+  if (origin && allowedOrigins(env).includes(origin)) {
+    h.set('Access-Control-Allow-Origin', origin);
+    h.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    h.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    h.set('Access-Control-Max-Age', '86400');
+  }
+  h.set('Vary', 'Origin');
+  return new Response(res.body, { status: res.status, headers: h });
+}
+
+const apiError = (code, extra = {}, status = 400) => json({ ok: false, error: code, ...extra }, status);
+
+function returnUrlOk(env, url) {
+  try { return allowedOrigins(env).includes(new URL(url).origin); } catch { return false; }
+}
+
+async function oauthLogin(env, url) {
+  const ret = url.searchParams.get('return') || '';
+  if (!returnUrlOk(env, ret)) return new Response('戻り先のページが許可されていません。Worker の SITE_URL（または ALLOWED_ORIGINS）を確認してください。', { status: 400, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  if (!env.DISCORD_APP_ID || !env.DISCORD_CLIENT_SECRET) return new Response('Worker に DISCORD_APP_ID と DISCORD_CLIENT_SECRET が設定されていません。', { status: 500, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  const state = await seal({ r: ret, x: Date.now() + 10 * 60_000 }, sessionSecret(env));
+  const q = new URLSearchParams({
+    response_type: 'code',
+    client_id: String(env.DISCORD_APP_ID).trim(),
+    scope: 'identify guilds',
+    redirect_uri: `${url.origin}/oauth/callback`,
+    state,
+    prompt: 'none',
+  });
+  return Response.redirect(`https://discord.com/oauth2/authorize?${q}`, 302);
+}
+
+async function oauthCallback(env, url) {
+  const st = await unseal(url.searchParams.get('state') || '', sessionSecret(env));
+  if (!st || st.x < Date.now() || !returnUrlOk(env, st.r)) return new Response('ログインの有効期限が切れました。もう一度お試しください。', { status: 400, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  const back = (hash) => Response.redirect(`${st.r.split('#')[0]}#${hash}`, 302);
+  const code = url.searchParams.get('code');
+  if (!code) return back('dlogin-error=denied');
+  const tr = await fetch(`${API}/oauth2/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: String(env.DISCORD_APP_ID).trim(),
+      client_secret: String(env.DISCORD_CLIENT_SECRET).trim(),
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: `${url.origin}/oauth/callback`,
+    }),
+  });
+  const tok = await tr.json().catch(() => ({}));
+  if (!tr.ok || !tok.access_token) return back('dlogin-error=token');
+  const me = await dapi(env, '/users/@me', { user: tok.access_token });
+  if (me.status !== 200) return back('dlogin-error=user');
+  const exp = Date.now() + Math.min(Number(tok.expires_in) || 604800, 604800) * 1000;
+  const name = me.data.global_name || me.data.username;
+  const session = await seal({ u: me.data.id, n: name, t: tok.access_token, x: exp }, sessionSecret(env));
+  const q = new URLSearchParams({ dlogin: session, did: me.data.id, dname: name, dexp: String(exp) });
+  return back(q.toString());
+}
+
+async function sessionOf(env, request) {
+  const m = /^Bearer\s+(.+)$/.exec(request.headers.get('Authorization') || '');
+  if (!m) return null;
+  const s = await unseal(m[1].trim(), sessionSecret(env));
+  if (!s || !s.u || s.x < Date.now()) return null;
+  return s;
+}
+
+/* ---------- お絵かきページ向け：送り先の一覧 ---------- */
+
+const CHANNEL_TYPES = [0, 5];  // テキスト・アナウンス
+
+async function guildContext(env, gid, uid) {
+  const bid = await botId(env);
+  const [g, ch, mu, mb] = await Promise.all([
+    dapi(env, `/guilds/${gid}`),
+    dapi(env, `/guilds/${gid}/channels`),
+    dapi(env, `/guilds/${gid}/members/${uid}`),
+    dapi(env, `/guilds/${gid}/members/${bid}`),
+  ]);
+  return { guild: g.data, guildStatus: g.status, channels: Array.isArray(ch.data) ? ch.data : [], member: mu.status === 200 ? mu.data : null, bot: mb.status === 200 ? mb.data : null };
+}
+
+function postableChannels(c) {
+  const cats = new Map(c.channels.filter((x) => x.type === 4).map((x) => [x.id, x]));
+  return c.channels
+    .filter((x) => CHANNEL_TYPES.includes(x.type))
+    .filter((x) => canPost(channelPerms(c.guild, c.member, x)) && canPost(channelPerms(c.guild, c.bot, x)))
+    .sort((a, b) => ((cats.get(a.parent_id)?.position ?? -1) - (cats.get(b.parent_id)?.position ?? -1)) || (a.position - b.position))
+    .map((x) => ({ id: x.id, name: x.name, category: cats.get(x.parent_id)?.name || '' }));
+}
+
+async function apiTargets(env, s) {
+  const [ug, bg] = await Promise.all([dapi(env, '/users/@me/guilds', { user: s.t }), dapi(env, '/users/@me/guilds?limit=200')]);
+  if (ug.status === 401) return apiError('session_expired', {}, 401);
+  if (ug.status !== 200 || bg.status !== 200) return apiError('discord_error', { status: ug.status !== 200 ? ug.status : bg.status }, 502);
+  const botGuilds = new Set(bg.data.map((g) => g.id));
+  const common = ug.data.filter((g) => botGuilds.has(g.id)).slice(0, 10);
+  const out = [];
+  for (const g of common) {
+    const st = await getSettings(env, g.id);
+    const item = { id: g.id, name: g.name, ok: false, reason: '', defaultChannel: st.defaultChannel || '', channels: [] };
+    out.push(item);
+    if (!st.enabled) { item.reason = 'disabled'; continue; }
+    const c = await guildContext(env, g.id, s.u);
+    if (!c.member) { item.reason = 'not_member'; continue; }
+    if (!c.bot || !c.guild) { item.reason = 'bot_no_access'; continue; }
+    if (!canSendBySettings(st, c.member, basePerms(c.guild, c.member))) { item.reason = 'not_allowed'; continue; }
+    item.channels = postableChannels(c);
+    if (!item.channels.length) { item.reason = 'no_channel'; continue; }
+    item.ok = true;
+  }
+  return json({ ok: true, user: { id: s.u, name: s.n }, guilds: out });
+}
+
+/* ---------- お絵かきページ向け：画像を送る ---------- */
+
+function jstStamp() {
+  const d = new Date(Date.now() + 9 * 3600_000);
+  return `${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}-${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}`;
+}
+
+async function apiSend(env, s, request) {
+  // 続けて送れるのは 30 秒ごと
+  const rateKey = `rate:${s.u}`;
+  const last = Number(await env.SETTINGS.get(rateKey)) || 0;
+  const wait = Math.ceil(SEND_INTERVAL - (Date.now() - last) / 1000);
+  if (wait > 0) return apiError('rate_limited', { wait }, 429);
+
+  let form;
+  try { form = await request.formData(); } catch { return apiError('bad_request'); }
+  const cid = String(form.get('channel') || '').trim();
+  const file = form.get('file');
+  if (!/^\d{15,22}$/.test(cid)) return apiError('bad_channel');
+  if (!file || typeof file === 'string') return apiError('bad_request');
+  if (file.size > MAX_UPLOAD) return apiError('too_large');
+  const buf = new Uint8Array(await file.arrayBuffer());
+  if (!(buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47)) return apiError('bad_request');
+
+  // チャンネルとサーバー
+  const ch = await dapi(env, `/channels/${cid}`);
+  if (ch.status === 404 || ch.status === 403 || ch.status === 401) return apiError('bot_no_access');
+  if (ch.status !== 200) return apiError('discord_error', { status: ch.status }, 502);
+  if (!ch.data.guild_id) return apiError('bad_channel');
+  if (!CHANNEL_TYPES.includes(ch.data.type)) return apiError('bad_channel_type');
+  const gid = ch.data.guild_id;
+  const st = await getSettings(env, gid);
+  if (!st.enabled) return apiError('disabled');
+  const c = await guildContext(env, gid, s.u);
+  if (!c.guild || !c.bot) return apiError('bot_no_access');
+  if (!c.member) return apiError('not_member');
+  if (!canSendBySettings(st, c.member, basePerms(c.guild, c.member))) return apiError('not_allowed');
+  if (!canPost(channelPerms(c.guild, c.member, ch.data))) return apiError('no_permission');
+  if (!canPost(channelPerms(c.guild, c.bot, ch.data))) return apiError('bot_no_permission');
+
+  // 送る（本文なし。ファイル名に日時と送った人の ID）
+  const filename = `${jstStamp()}_DiscordID-${s.u}.png`;
+  const fd = new FormData();
+  fd.append('payload_json', JSON.stringify({ attachments: [{ id: 0, filename }], allowed_mentions: { parse: [] } }));
+  fd.append('files[0]', new Blob([buf], { type: 'image/png' }), filename);
+  const r = await dapi(env, `/channels/${cid}/messages`, { method: 'POST', form: fd });
+  if (r.status === 429) return apiError('discord_busy', { wait: Math.ceil(r.data?.retry_after || 30) }, 429);
+  if (r.status === 413 || r.data?.code === 40005) return apiError('too_large');
+  if (r.status !== 200) return apiError('discord_error', { status: r.status, code: r.data?.code }, 502);
+  await env.SETTINGS.put(rateKey, String(Date.now()), { expirationTtl: 60 });
+  return json({ ok: true, filename, url: `https://discord.com/channels/${gid}/${cid}/${r.data.id}`, channel: ch.data.name, guild: c.guild.name });
+}
+
+async function handleApi(env, request, url) {
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204 });
+  const origin = request.headers.get('Origin');
+  if (origin && !allowedOrigins(env).includes(origin)) return apiError('origin_not_allowed', {}, 403);
+  if (!env.SETTINGS || !env.DISCORD_BOT_TOKEN) return apiError('not_configured', {}, 500);
+  const s = await sessionOf(env, request);
+  if (!s) return apiError('login_required', {}, 401);
+  if (url.pathname === '/api/targets' && request.method === 'GET') return apiTargets(env, s);
+  if (url.pathname === '/api/send' && request.method === 'POST') return apiSend(env, s, request);
+  return apiError('not_found', {}, 404);
+}
+
+/* ---------- /地図設定（管理メニュー） ---------- */
+
+async function hashPassword(pw, salt, iter = PW_ITER) {
+  const key = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: iter }, key, 256);
+  return new Uint8Array(bits);
+}
+async function checkPassword(pw, rec) {
+  if (!rec?.hash) return false;
+  const h = await hashPassword(pw, unb64u(rec.salt), rec.iter || PW_ITER);
+  const want = unb64u(rec.hash);
+  let d = h.length ^ want.length;
+  for (let i = 0; i < Math.min(h.length, want.length); i++) d |= h[i] ^ want[i];
+  return d === 0;
+}
+
+const memberPerms = (interaction) => { try { return BigInt(interaction.member?.permissions || '0'); } catch { return 0n; } };
+const userOf = (interaction) => interaction.member?.user || interaction.user || {};
+const nameOf = (u) => u.global_name || u.username || '';
+const eph = (data) => json({ type: 4, data: { flags: 64, allowed_mentions: { parse: [] }, ...data } });
+const NO_PERMISSION = '⚠ 権限がありません！';
+
+function jst(ms) {
+  const d = new Date(ms + 9 * 3600_000);
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+}
+
+async function notify(env, s, content) {
+  if (!s.notifyChannel) return;
+  await dapi(env, `/channels/${s.notifyChannel}/messages`, { method: 'POST', body: { content, allowed_mentions: { parse: [] } } }).catch(() => {});
+}
+
+const SEND_MODES = [
+  ['admins', '管理者だけ', '管理メニューを使える人だけが送れます（最初の設定）'],
+  ['all', '全員', 'サーバーの全員が送れます'],
+  ['roles', 'ロールで指定', '選んだロールを持つ人と管理者が送れます'],
+  ['users', 'アカウントで指定', '選んだ人と管理者が送れます'],
+];
+
+const list = (ids, f, none = 'なし') => (ids.length ? ids.map(f).join(' ') : none);
+const roleM = (id) => `<@&${id}>`;
+const userM = (id) => `<@${id}>`;
+const chM = (id) => (id ? `<#${id}>` : '未設定');
+
+function senderText(s) {
+  if (s.sendMode === 'all') return '全員';
+  if (s.sendMode === 'roles') return `ロール：${list(s.sendRoles, roleM, '（未選択）')}（と管理者）`;
+  if (s.sendMode === 'users') return `アカウント：${list(s.sendUsers, userM, '（未選択）')}（と管理者）`;
+  return '管理者だけ';
+}
+
+const btn = (custom_id, label, style = 2, extra = {}) => ({ type: 2, custom_id, label, style, ...extra });
+const row = (...components) => ({ type: 1, components });
+const backRow = (...more) => row(btn('as:page:main', '← 戻る'), ...more);
+
+const ADMIN_HELP = [
+  '**❓ 管理メニューの説明**',
+  '',
+  'このメニューで、お絵かきページ（地図に自由に描けるページ）から、このサーバーに画像を送れるようにする設定を決めます。設定はサーバーごとです。',
+  '',
+  '**送信の設定**',
+  '・「送信を有効にする」を押すと、お絵かきページの保存メニューの「Discordに送る」から、このサーバーに送れるようになります（最初は止まっています）。',
+  '・初期チャンネル：送り先を選ぶときに、最初から選ばれているチャンネルです。',
+  '・送れる人：管理者だけ（最初の設定）／全員／ロールで指定／アカウントで指定。管理メニューを使える人は、いつでも送れます。',
+  '・送る人は、Discord でログインして送ります。その人が書き込めないチャンネルや、Bot が見られないチャンネルには送れません。同じ人が送れるのは 30 秒に 1 回です。',
+  '・送られる画像には本文がなく、ファイル名が「月-日-時分秒_DiscordID-送った人のID.png」になります。',
+  '',
+  '**管理者の設定**',
+  '・サーバーの管理者権限を持つ人（とサーバーの持ち主）は、いつでもこのメニューを使えます。',
+  '・ここで選んだロール・アカウントの人も、パスワードなしで使えるようになります。',
+  '',
+  '**パスワードと記録**',
+  '・パスワードを設定すると、権限のない人でも `/地図設定 パスワード:〇〇` で、このメニューを開けるようになります（最初は設定されていません）。',
+  `・パスワードを ${LOCK_TRIES} 回続けて間違えると、その人は ${LOCK_MIN} 分間開けなくなります。`,
+  `・パスワードで開いた人は、そこから ${GRANT_MIN} 分間このメニューを操作できます。`,
+  '・パスワードで開いた記録は「記録を見る」で確認できます。通知先のチャンネルを選ぶと、開かれたときにそこへお知らせします。',
+  '・パスワードは元に戻せない形で保存しています。忘れたときは、管理者が設定し直してください。',
+  '',
+  '※ この説明は `/地図 使い方` には出てきません。',
+].join('\n');
+
+function adminPage(s, page, note = '') {
+  const head = note ? `${note}\n\n` : '';
+  if (page === 'send') {
+    const rows = [
+      row({ type: 8, custom_id: 'as:defch', placeholder: '送信先の初期チャンネルを選ぶ', channel_types: CHANNEL_TYPES, min_values: 0, max_values: 1, default_values: s.defaultChannel ? [{ id: s.defaultChannel, type: 'channel' }] : [] }),
+      row({ type: 3, custom_id: 'as:mode', placeholder: '送れる人', options: SEND_MODES.map(([value, label, description]) => ({ value, label, description, default: s.sendMode === value })) }),
+    ];
+    if (s.sendMode === 'roles') rows.push(row({ type: 6, custom_id: 'as:sroles', placeholder: '送れるロールを選ぶ（複数可）', min_values: 0, max_values: 25, default_values: s.sendRoles.map((id) => ({ id, type: 'role' })) }));
+    if (s.sendMode === 'users') rows.push(row({ type: 5, custom_id: 'as:susers', placeholder: '送れる人を選ぶ（複数可）', min_values: 0, max_values: 25, default_values: s.sendUsers.map((id) => ({ id, type: 'user' })) }));
+    rows.push(backRow());
+    return { content: `${head}**📤 送信の設定**\n初期チャンネル：${chM(s.defaultChannel)}\n送れる人：${senderText(s)}`, components: rows };
+  }
+  if (page === 'admins') {
+    return {
+      content: `${head}**👑 管理者の設定**\nサーバーの管理者権限を持つ人のほかに、このメニューを使える人を選びます。\nロール：${list(s.adminRoles, roleM)}\nアカウント：${list(s.adminUsers, userM)}`,
+      components: [
+        row({ type: 6, custom_id: 'as:aroles', placeholder: '管理メニューを使えるロール（複数可）', min_values: 0, max_values: 25, default_values: s.adminRoles.map((id) => ({ id, type: 'role' })) }),
+        row({ type: 5, custom_id: 'as:ausers', placeholder: '管理メニューを使える人（複数可）', min_values: 0, max_values: 25, default_values: s.adminUsers.map((id) => ({ id, type: 'user' })) }),
+        backRow(),
+      ],
+    };
+  }
+  if (page === 'pass') {
+    return {
+      content: `${head}**🔑 パスワードと記録**\nパスワード：${s.pw ? '設定済み' : '未設定（パスワードでは開けません）'}\nパスワードで開かれたときの通知先：${s.notifyChannel ? chM(s.notifyChannel) : 'なし'}`,
+      components: [
+        row(btn('as:pw', s.pw ? 'パスワードを変更' : 'パスワードを設定', 1), btn('as:pwoff', 'パスワードをなくす', 4, { disabled: !s.pw }), btn('as:page:log', '記録を見る')),
+        row({ type: 8, custom_id: 'as:notify', placeholder: '通知先のチャンネルを選ぶ（選ばなければ通知しない）', channel_types: CHANNEL_TYPES, min_values: 0, max_values: 1, default_values: s.notifyChannel ? [{ id: s.notifyChannel, type: 'channel' }] : [] }),
+        backRow(),
+      ],
+    };
+  }
+  if (page === 'log') {
+    const lines = s.log.length
+      ? s.log.map((l) => `・${jst(l.at)}　${userM(l.uid)}（${l.name || '名前不明'}）${l.kind === 'lock' ? `が ${LOCK_TRIES} 回間違えたため ${LOCK_MIN} 分間ロック` : 'がパスワードで開きました'}`).join('\n')
+      : 'まだ記録はありません。';
+    return { content: `${head}**📜 パスワードで開いた記録**（新しい順・最大 20 件）\n${lines}`, components: [row(btn('as:page:pass', '← 戻る'))] };
+  }
+  if (page === 'help') return { content: ADMIN_HELP, components: [backRow()] };
+  return {
+    content: [
+      head + '**⚙️ 地図の管理メニュー**（このサーバーの設定・自分にだけ見えます）',
+      `お絵かきページからの送信：${s.enabled ? '✅ 有効' : '⛔ 止めています'}`,
+      `送信先の初期チャンネル：${chM(s.defaultChannel)}`,
+      `送れる人：${senderText(s)}`,
+      `管理メニューを使える人：サーバー管理者${s.adminRoles.length ? `、${list(s.adminRoles, roleM)}` : ''}${s.adminUsers.length ? `、${list(s.adminUsers, userM)}` : ''}`,
+      `パスワード：${s.pw ? '設定済み' : '未設定'}`,
+    ].join('\n'),
+    components: [
+      row(
+        s.enabled ? btn('as:toggle', '送信を止める', 4) : btn('as:toggle', '送信を有効にする', 3),
+        btn('as:page:send', '📤 送信の設定'),
+        btn('as:page:admins', '👑 管理者の設定'),
+        btn('as:page:pass', '🔑 パスワード・記録'),
+        btn('as:page:help', '❓ 説明'),
+      ),
+    ],
+  };
+}
+
+const pwModal = () => ({
+  type: 9,
+  data: {
+    custom_id: 'as:pwmodal',
+    title: 'パスワードの設定',
+    components: [
+      row({ type: 4, custom_id: 'pw', label: '新しいパスワード（4〜64文字）', style: 1, min_length: 4, max_length: 64, required: true }),
+      row({ type: 4, custom_id: 'pw2', label: '確認のため、もう一度', style: 1, min_length: 4, max_length: 64, required: true }),
+    ],
+  },
+});
+
+/** 管理メニューを操作してよいか（権限がある、またはパスワードで開いてから時間内） */
+async function adminAllowed(env, s, interaction) {
+  const member = interaction.member || {};
+  if (isAdminMember(s, member, memberPerms(interaction))) return true;
+  return !!(await env.SETTINGS.get(`grant:${interaction.guild_id}:${userOf(interaction).id}`));
+}
+
+async function openAdmin(env, interaction) {
+  if (!interaction.guild_id) return eph({ content: 'このコマンドはサーバーの中で使ってください。' });
+  if (!env.SETTINGS) return eph({ content: '管理メニューを使うには、Cloudflare の Worker に KV（SETTINGS）を設定してください。' });
+  const gid = interaction.guild_id;
+  const u = userOf(interaction);
+  const s = await getSettings(env, gid);
+  if (isAdminMember(s, interaction.member || {}, memberPerms(interaction))) return eph(adminPage(s, 'main'));
+
+  const pw = String(optionValue(interaction.data, 'password') ?? '');
+  if (!pw || !s.pw) return eph({ content: NO_PERMISSION });
+  const lockKey = `lock:${gid}:${u.id}`;
+  const lock = (await env.SETTINGS.get(lockKey, 'json')) || { n: 0, until: 0 };
+  if (lock.until > Date.now()) return eph({ content: `${NO_PERMISSION}\nパスワードを続けて間違えたため、${Math.ceil((lock.until - Date.now()) / 60000)} 分ほどたってからもう一度お試しください。` });
+  if (!(await checkPassword(pw, s.pw))) {
+    lock.n += 1;
+    if (lock.n >= LOCK_TRIES) {
+      lock.n = 0;
+      lock.until = Date.now() + LOCK_MIN * 60_000;
+      s.log = [{ at: Date.now(), uid: u.id, name: nameOf(u), kind: 'lock' }, ...s.log].slice(0, 20);
+      await putSettings(env, gid, s);
+      await notify(env, s, `⚠ ${userM(u.id)}（${nameOf(u)}）さんが /地図設定 のパスワードを ${LOCK_TRIES} 回続けて間違えたため、${LOCK_MIN} 分間開けないようにしました。`);
+    }
+    await env.SETTINGS.put(lockKey, JSON.stringify(lock), { expirationTtl: (LOCK_MIN + 5) * 60 });
+    const left = lock.until > Date.now() ? `${LOCK_MIN} 分間は開けません。` : `あと ${LOCK_TRIES - lock.n} 回間違えると、${LOCK_MIN} 分間開けなくなります。`;
+    return eph({ content: `${NO_PERMISSION}\nパスワードが違います。${left}` });
+  }
+  await env.SETTINGS.delete(lockKey);
+  await env.SETTINGS.put(`grant:${gid}:${u.id}`, '1', { expirationTtl: GRANT_MIN * 60 });
+  s.log = [{ at: Date.now(), uid: u.id, name: nameOf(u), kind: 'open' }, ...s.log].slice(0, 20);
+  await putSettings(env, gid, s);
+  await notify(env, s, `🔑 ${userM(u.id)}（${nameOf(u)}）さんが、パスワードで /地図設定 を開きました。`);
+  return eph(adminPage(s, 'main', `🔑 パスワードで開きました（${GRANT_MIN} 分間操作できます）。`));
+}
+
+const update = (data) => json({ type: 7, data: { allowed_mentions: { parse: [] }, ...data } });
+
+async function adminComponent(env, interaction) {
+  if (!env.SETTINGS) return eph({ content: 'KV（SETTINGS）が設定されていません。' });
+  const gid = interaction.guild_id;
+  const s = await getSettings(env, gid);
+  if (!(await adminAllowed(env, s, interaction))) return eph({ content: `${NO_PERMISSION}\nもう一度 /地図設定 を開いてください。` });
+  const id = interaction.data.custom_id;
+  const values = interaction.data.values || [];
+  const save = async (page, note) => { await putSettings(env, gid, s); return update(adminPage(s, page, note)); };
+
+  if (id.startsWith('as:page:')) return update(adminPage(s, id.slice(8)));
+  if (id === 'as:toggle') { s.enabled = !s.enabled; return save('main', s.enabled ? '✅ お絵かきページからの送信を有効にしました。' : '⛔ お絵かきページからの送信を止めました。'); }
+  if (id === 'as:defch') { s.defaultChannel = values[0] || ''; return save('send', '✅ 初期チャンネルを変更しました。'); }
+  if (id === 'as:mode') { s.sendMode = SEND_MODES.some(([v]) => v === values[0]) ? values[0] : 'admins'; return save('send', '✅ 送れる人を変更しました。'); }
+  if (id === 'as:sroles') { s.sendRoles = values; return save('send', '✅ 送れるロールを変更しました。'); }
+  if (id === 'as:susers') { s.sendUsers = values; return save('send', '✅ 送れる人を変更しました。'); }
+  if (id === 'as:aroles') { s.adminRoles = values; return save('admins', '✅ 管理メニューを使えるロールを変更しました。'); }
+  if (id === 'as:ausers') { s.adminUsers = values; return save('admins', '✅ 管理メニューを使える人を変更しました。'); }
+  if (id === 'as:notify') { s.notifyChannel = values[0] || ''; return save('pass', '✅ 通知先を変更しました。'); }
+  if (id === 'as:pw') return json(pwModal());
+  if (id === 'as:pwoff') { s.pw = null; return save('pass', '✅ パスワードをなくしました。パスワードでは開けなくなります。'); }
+  return update(adminPage(s, 'main'));
+}
+
+async function adminModal(env, interaction) {
+  const gid = interaction.guild_id;
+  const s = await getSettings(env, gid);
+  if (!(await adminAllowed(env, s, interaction))) return eph({ content: NO_PERMISSION });
+  const field = (cid) => {
+    for (const r of interaction.data.components || []) {
+      for (const c of r.components || [r.component].filter(Boolean)) if (c.custom_id === cid) return String(c.value || '');
+    }
+    return '';
+  };
+  const pw = field('pw'), pw2 = field('pw2');
+  if (pw !== pw2) return update(adminPage(s, 'pass', '⚠ 2 つの入力が違っていたため、パスワードは変更していません。'));
+  if (pw.length < 4) return update(adminPage(s, 'pass', '⚠ パスワードは 4 文字以上にしてください。'));
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  s.pw = { salt: b64u(salt), hash: b64u(await hashPassword(pw, salt)), iter: PW_ITER };
+  await putSettings(env, gid, s);
+  return update(adminPage(s, 'pass', '✅ パスワードを設定しました。'));
+}
+
 // 「考え中…」の返事（自分だけなら、ほかの人には見えない）
 const deferred = (priv) => json({ type: 5, data: { flags: priv ? 64 : 0 } });
 
 export default {
   async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    // お絵かきページから（ログイン・送り先の一覧・送信）
+    if (url.pathname === '/oauth/login') return oauthLogin(env, url);
+    if (url.pathname === '/oauth/callback') return oauthCallback(env, url);
+    if (url.pathname.startsWith('/api/')) {
+      try {
+        return cors(env, request, await handleApi(env, request, url));
+      } catch (e) {
+        console.error(e);
+        return cors(env, request, apiError('server_error', { message: String(e.message || e) }, 500));
+      }
+    }
     if (request.method === 'GET') return new Response('筒ビューア Discord 連携は動いています。', { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
     if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
 
@@ -550,6 +1123,11 @@ export default {
     if (interaction.type === 1) return json({ type: 1 }); // PING
 
     try {
+      // /地図設定（管理メニュー）は地図のデータを使わないので先に
+      if (interaction.type === 2 && interaction.data?.name === 'mapsettings') return await openAdmin(env, interaction);
+      if (interaction.type === 3 && String(interaction.data?.custom_id || '').startsWith('as:')) return await adminComponent(env, interaction);
+      if (interaction.type === 5 && interaction.data?.custom_id === 'as:pwmodal') return await adminModal(env, interaction);
+
       const data = await loadData(env);
 
       if (interaction.type === 2 && interaction.data?.name === 'map') {

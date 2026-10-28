@@ -100,6 +100,7 @@
 - 保存：レイヤー画像・地図全体・表示範囲を、閲覧ページと同じようにPNGで保存できます（今の表示・透明度・重なり順のまま）。
 - 作業のバックアップ：描いた内容は自動でブラウザに保存されます。ブラウザのデータを消すと失われるので、「作業を保存（ZIP）」でファイルにも残しておくと安心です（最後のバックアップから7日たつとお知らせが出ます）。「作業を再開（ZIP）」で、そのファイルから続きを描けます。
 - 定規の長さを km で表示したいときは、管理ページの「表示」にある「地図の横幅（一周の長さ）」を設定してください。
+- Discord に送る：管理ページで「Discord 連携の Worker の URL」を設定すると、保存メニューに「Discordに送る」が出ます。Discord でログインして、送り先のチャンネル（または チャンネル ID）と送る画像（地図全体・表示範囲・レイヤー）を選んで送ります。どのサーバーで送れるかは Discord の `/地図設定` で決めます（[discord/README.md](discord/README.md)）。
 
 キーボード：`V` 移動、`P` ペン、`E` 消しゴム、`L` 定規、`S` 図形、`G` 塗りつぶし、`I` スポイト、`[` `]` 太さ、`Ctrl`+`Z` 元に戻す、`Ctrl`+`Y` やり直す、`Enter` 確定、`Esc` 取り消し、`0` 全体を表示、`H` 表示を隠す。
 
@@ -156,18 +157,20 @@ tools/                  Discord 連携で GitHub Actions が使うスクリプ�
   "base": { "name": "下地", "src": "data/images/xxx.jpg" },
   "layers": [ { "id": "...", "name": "雲", "src": "data/images/yyy.png", "visible": true, "opacity": 1 } ],
   "background": { "src": "data/images/zzz.jpg", "color": "#141a2e", "fit": "cover" },
-  "display": { "defaultMode": "cylinder", "autoRotate": true, "rotateSpeed": 6, "shading": 0.55, "startAngle": 180, "widthKm": 40000 }
+  "display": { "defaultMode": "cylinder", "autoRotate": true, "rotateSpeed": 6, "shading": 0.55, "startAngle": 180, "widthKm": 40000 },
+  "discord": { "workerUrl": "https://〜.workers.dev" }
 }
 ```
 
 - `layers` は配列の後ろほど手前に描かれます。
+- `discord.workerUrl`（省略可）は Discord 連携の Worker の URL です。お絵かきページの「Discordに送る」に使います。
 - `widthKm`（省略可）は地図の横幅（一周）の長さです。お絵かきページの定規の km 表示に使います。
 - `startAngle` は開いたときに正面（平面表示では枠の中央）に来る位置です（0＝画像の左端、180＝中央＝元の画像のまま）。
 
 ## プログラムを書き換えたとき（キャッシュ対策）
 
 GitHub Pages ではブラウザが CSS・JavaScript をしばらく再利用するため、更新直後は古い動きのままになることがあります。
-読み込み先に `?v=20261028-1` のようなバージョン番号を付けているので、プログラムを書き換えたら次のファイルの番号をすべて同じ新しい値に変えてください（管理ページからの画像や設定の更新では不要です）。
+読み込み先に `?v=20261028-4` のようなバージョン番号を付けているので、プログラムを書き換えたら次のファイルの番号をすべて同じ新しい値に変えてください（管理ページからの画像や設定の更新では不要です）。
 
 - `index.html`、`admin/index.html`、`draw/index.html`（CSS と JS の読み込み）
 - `assets/js/viewer.js`、`assets/js/dial.js`、`assets/js/admin.js`、`assets/js/draw/` の各ファイル（`import` の行）

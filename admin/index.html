@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
   <link rel="stylesheet" href="../assets/css/stage.css?v=20261028-1">
-  <link rel="stylesheet" href="../assets/css/admin.css?v=20261028-1">
+  <link rel="stylesheet" href="../assets/css/admin.css?v=20261028-4">
 </head>
 <body>
   <header class="head">
@@ -138,6 +138,10 @@
           <input type="number" id="widthKm" min="0" step="any" inputmode="decimal" placeholder="例：40000">
         </label>
         <p class="desc">km で入れると、お絵かきページの定規で長さが km で表示されます。空欄のときはピクセルで表示します。</p>
+        <label class="field"><span>Discord 連携の Worker の URL（お絵かきページから Discord に送るとき）</span>
+          <input type="url" id="discordWorker" inputmode="url" spellcheck="false" autocomplete="off" placeholder="https://〜.workers.dev">
+        </label>
+        <p class="desc">入れると、お絵かきページの保存メニューに「Discordに送る」が出ます。どのサーバーで送れるかは、Discord の <code>/地図設定</code> で決めます。</p>
       </section>
 
       <!-- 履歴 -->
@@ -248,6 +252,6 @@
   </template>
 
   <script src="../assets/vendor/jszip.min.js" defer></script>
-  <script type="module" src="../assets/js/admin.js?v=20261028-1"></script>
+  <script type="module" src="../assets/js/admin.js?v=20261028-4"></script>
 </body>
 </html>
