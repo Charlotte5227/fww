@@ -1,9 +1,9 @@
 // お絵かきページ
-import { Doc, TILE, MAX_DRAW_LAYERS, newId, newCanvas, isEmpty } from './doc.js?v=20261028-2';
-import { Board } from './view.js?v=20261028-2';
-import { History } from './history.js?v=20261028-2';
-import { Store } from './store.js?v=20261028-2';
-import { createTools, formatLength } from './tools.js?v=20261028-2';
+import { Doc, TILE, MAX_DRAW_LAYERS, newId, newCanvas, isEmpty, bumpRev } from './doc.js?v=20261028-3';
+import { Board } from './view.js?v=20261028-3';
+import { History } from './history.js?v=20261028-3';
+import { Store } from './store.js?v=20261028-3';
+import { createTools, formatLength } from './tools.js?v=20261028-3';
 import { safeName, stamp, canvasToBlob, loadJSZip, deliver } from '../save.js?v=20261028-1';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -107,7 +107,7 @@ async function main() {
   app.history = new History(doc, {
     onChange: updateUndoButtons,
     onRestore: (r) => {
-      for (const [layer, k] of r.tiles || []) markTile(layer, k);
+      for (const [layer, k] of r.tiles || []) { markTile(layer, k); bumpRev(layer); }
       afterLayersChanged();
       app.board.request();
     },

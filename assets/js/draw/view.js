@@ -2,6 +2,107 @@
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
+/**
+ * 重ねたレイヤーの作り置き。
+ * 毎回すべての地図画像（大きな画像が何枚も）を描き直すと重いので、
+ * 描き込み先より下のレイヤー・上のレイヤーをそれぞれ合成して作り置きする。
+ * 作り置きは拡大率に合った解像度（1/1・1/2・1/4…）の 512px 四方のタイルで、画面に映る分だけ作る。
+ * レイヤーの表示・透明度・順番・中身が変わったときだけ作り直す。
+ */
+const CT = 512;           // 作り置きタイルの大きさ（px）
+const CACHE_MAX = 64;     // 作り置きタイルの上限（古いものから捨てる）
+
+class StackCache {
+  constructor(doc) { this.doc = doc; this.sig = ''; this.tiles = new Map(); this.spare = []; }
+
+  static signature(layers) {
+    return layers.map((l) => `${l.id}:${l.visible ? 1 : 0}:${l.opacity}:${l.rev || 0}`).join('|');
+  }
+
+  /** 地図の範囲 (rx, ry, rw, rh) を ctx に S 倍で、作り置きを使って描く */
+  draw(ctx, layers, level, rx, ry, rw, rh, S) {
+    this.pending = false;
+    const sig = StackCache.signature(layers);
+    if (sig !== this.sig) { this.clear(); this.sig = sig; }
+    if (!layers.some((l) => l.visible && l.opacity > 0)) return;
+    const doc = this.doc;
+    const W = doc.w, H = doc.h;
+    const k = 2 ** -level;             // この解像度での 1 地図 px の大きさ
+    const span = CT / k;               // タイル 1 枚が受け持つ地図の幅
+    const nx = Math.ceil(W / span), ny = Math.ceil(H / span);
+    const px = (x) => Math.round((x - rx) * S);
+    const py = (y) => Math.round((y - ry) * S);
+    const j0 = Math.max(0, Math.floor(ry / span)), j1 = Math.min(ny - 1, Math.floor((ry + rh) / span));
+    // 拡大・縮小の直後に一度に作ると引っかかるので、1 回に作るのは少しだけにして、
+    // 残りは粗い解像度の作り置きで代わりに描き、次の回に続きを作る
+    const deadline = performance.now() + 8;
+    for (let c = Math.floor(rx / W); c <= Math.floor((rx + rw) / W); c++) {
+      const ox = c * W;
+      const i0 = Math.max(0, Math.floor((rx - ox) / span)), i1 = Math.min(nx - 1, Math.floor((rx + rw - ox) / span));
+      for (let j = j0; j <= j1; j++) {
+        for (let i = i0; i <= i1; i++) {
+          const mx0 = i * span, mx1 = Math.min(W, (i + 1) * span);
+          const my0 = j * span, my1 = Math.min(H, (j + 1) * span);
+          const x0 = px(ox + mx0), x1 = px(ox + mx1), y0 = py(my0), y1 = py(my1);
+          let t = this.tiles.get(`${level}/${i}/${j}`);
+          if (!t && performance.now() > deadline) {
+            const sub = this.coarser(level, mx0, my0);
+            if (sub) {
+              const { t: ct, k2, cx, cy } = sub;
+              ctx.drawImage(ct, (mx0 - cx) * k2, (my0 - cy) * k2, (mx1 - mx0) * k2, (my1 - my0) * k2, x0, y0, x1 - x0, y1 - y0);
+              this.pending = true;
+              continue;
+            }
+          }
+          t = this.tile(layers, level, i, j, span, k);
+          ctx.drawImage(t, 0, 0, (mx1 - mx0) * k, (my1 - my0) * k, x0, y0, x1 - x0, y1 - y0);
+        }
+      }
+    }
+  }
+
+  /** すでにある粗い解像度の作り置きのうち、地図の点 (mx, my) を含むもの */
+  coarser(level, mx, my) {
+    for (let lv = level + 1; lv <= 6; lv++) {
+      const k2 = 2 ** -lv, span2 = CT / k2;
+      const i = Math.floor(mx / span2), j = Math.floor(my / span2);
+      const t = this.tiles.get(`${lv}/${i}/${j}`);
+      if (t) return { t, k2, cx: i * span2, cy: j * span2 };
+    }
+    return null;
+  }
+
+  tile(layers, level, i, j, span, k) {
+    const key = `${level}/${i}/${j}`;
+    let t = this.tiles.get(key);
+    if (t) {
+      // 最近使ったものとして後ろへ
+      this.tiles.delete(key);
+      this.tiles.set(key, t);
+      return t;
+    }
+    t = this.spare.pop();
+    if (!t) { t = document.createElement('canvas'); t.width = t.height = CT; }
+    const ctx = t.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, CT, CT);
+    this.doc.render(ctx, i * span, j * span, span, span, k, { layers, smooth: true });
+    this.tiles.set(key, t);
+    while (this.tiles.size > CACHE_MAX) {
+      const [oldKey, old] = this.tiles.entries().next().value;
+      this.tiles.delete(oldKey);
+      this.spare.push(old);
+    }
+    return t;
+  }
+
+  clear() {
+    for (const t of this.tiles.values()) this.spare.push(t);
+    this.tiles.clear();
+    this.spare.length = Math.min(this.spare.length, 16);
+  }
+}
+
 export class Board {
   /**
    * @param {HTMLElement} el
@@ -23,6 +124,8 @@ export class Board {
     this.spaceDown = false;
     this.hover = null;      // マウスの位置（ペン先の円の表示用）
     this.background = '#1a2038';
+    this.below = new StackCache(doc);  // 描き込み先より下
+    this.above = new StackCache(doc);  // 描き込み先より上
 
     new ResizeObserver(() => this.resize()).observe(el);
     this.resize();
@@ -152,10 +255,31 @@ export class Board {
       ctx.rect(px0, py0, px1 - px0, py1 - py0);
       ctx.clip();
       ctx.translate(px0, py0);
-      this.doc.render(ctx, rx, ry, (px1 - px0) / S, (py1 - py0) / S, S, { smooth: this.cam.s < 2 });
+      this.drawStack(ctx, rx, ry, (px1 - px0) / S, (py1 - py0) / S, S);
       ctx.restore();
     }
     this.drawOverlay();
+  }
+
+  /** 下の作り置き → 描き込み先のレイヤー（描いている最中も軽いようにタイルで） → 上の作り置き */
+  drawStack(ctx, rx, ry, rw, rh, S) {
+    const doc = this.doc;
+    const layers = doc.layers;
+    const ai = layers.findIndex((l) => l.id === doc.activeId && l.kind === 'draw');
+    const below = ai < 0 ? layers : layers.slice(0, ai);
+    const above = ai < 0 ? [] : layers.slice(ai + 1);
+    // 画面に必要な細かさ以上で、いちばん小さい解像度
+    const level = clamp(Math.floor(-Math.log2(Math.max(S, 1e-6)) + 1e-9), 0, 6);
+    const smooth = this.cam.s < 2;
+    ctx.imageSmoothingEnabled = smooth;
+    // 作り置きは画面の細かさに合わせてあるので、毎回の表示は軽い補間で十分
+    ctx.imageSmoothingQuality = 'low';
+    this.below.draw(ctx, below, level, rx, ry, rw, rh, S);
+    let pending = this.below.pending;
+    if (ai >= 0) doc.render(ctx, rx, ry, rw, rh, S, { layers: [layers[ai]], smooth, quality: 'low' });
+    ctx.imageSmoothingEnabled = smooth;
+    this.above.draw(ctx, above, level, rx, ry, rw, rh, S);
+    if (pending || this.above.pending) this.request();  // 作りかけの続きは次の回に
   }
 
   drawOverlay() {

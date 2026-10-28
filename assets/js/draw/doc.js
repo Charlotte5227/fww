@@ -14,6 +14,9 @@ const newCanvas = (w, h) => {
 };
 
 let seq = 0;
+let revSeq = 0;
+/** レイヤーの中身が変わった印（表示の作り置きを作り直すため） */
+export const bumpRev = (layer) => { if (layer) layer.rev = ++revSeq; };
 export const newId = () => `d${Date.now().toString(36)}${(seq++).toString(36)}`;
 
 export class Doc {
@@ -43,7 +46,7 @@ export class Doc {
 
   /** お絵かきレイヤーを作る（index の位置に入れる。省略時はいちばん上） */
   createDrawLayer({ id = newId(), name, visible = true, opacity = 1, tiles = new Map() } = {}) {
-    return { id, kind: 'draw', name, visible, opacity, tiles };
+    return { id, kind: 'draw', name, visible, opacity, tiles, rev: ++revSeq };
   }
 
   insert(layer, index = this.layers.length) {
@@ -68,7 +71,10 @@ export class Doc {
     this.changed({ layers: true });
   }
 
-  changed(what) { this.onChange?.(what); }
+  changed(what) {
+    if (what.tiles && what.layer) bumpRev(what.layer);
+    this.onChange?.(what);
+  }
 
   /* ---------- タイル ---------- */
 
@@ -131,10 +137,10 @@ export class Doc {
    * 地図の範囲 (rx, ry, rw, rh) を ctx に scale 倍で描く。左右は地図がつながっているので繰り返す。
    * layers を渡すとそのレイヤーだけ、opts.hidden で非表示のレイヤーも描く。
    */
-  render(ctx, rx, ry, rw, rh, scale, { layers = this.layers, hidden = false, smooth = true } = {}) {
+  render(ctx, rx, ry, rw, rh, scale, { layers = this.layers, hidden = false, smooth = true, quality = 'high' } = {}) {
     const W = this.w, H = this.h;
     ctx.imageSmoothingEnabled = smooth;
-    ctx.imageSmoothingQuality = 'high';
+    ctx.imageSmoothingQuality = quality;
     const kx0 = Math.floor(rx / W), kx1 = Math.floor((rx + rw) / W);
     const px = (x) => Math.round((x - rx) * scale);
     const py = (y) => Math.round((y - ry) * scale);
