@@ -3,6 +3,7 @@ import { Stage } from './engine.js?v=20261028-1';
 import { Dial } from './dial.js?v=20261028-1';
 import { SaveMenu } from './save.js?v=20261028-1';
 import { History } from './history.js?v=20261028-1';
+import { Prefs, siteOn } from './prefs.js?v=20261028-6';
 
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
@@ -18,6 +19,29 @@ let dial;
 let config;      // 今表示している版の設定
 let saveMenu;
 let history;
+let prefs;
+
+/** 「⚙ 表示の設定」で隠せるもの（site はサイト全体の機能。管理ページでオフならここにも出さない） */
+const PREF_ITEMS = [
+  { key: 'layerbar', group: '上の欄', label: 'レイヤーの切り替え欄（まるごと）' },
+  { key: 'history', group: '上の欄', label: '日付（過去の地図）のボタン', site: 'history' },
+  { key: 'opacity', group: '上の欄', label: '透明度のボタン', site: 'opacity' },
+  { key: 'all', group: '上の欄', label: '「すべて」のチェック' },
+  { key: 'drawLink', group: '上の欄', label: 'お絵かきページへのボタン（鉛筆）', site: 'draw' },
+  { key: 'auto', group: '下の操作バー', label: '自動回転のボタン' },
+  { key: 'dial', group: '下の操作バー', label: '回転のダイヤル' },
+  { key: 'reset', group: '下の操作バー', label: '表示を元に戻すボタン' },
+  { key: 'save', group: '下の操作バー', label: '画像の保存ボタン', site: 'save' },
+  { key: 'hint', group: 'そのほか', label: '開いたときの操作のヒント' },
+];
+
+function onPrefs(p) {
+  // 下の操作バーが空になったら、バーごと隠す
+  app.classList.toggle('hide-controls', !['auto', 'dial', 'reset', 'save'].some((k) => p.on(k)));
+  if (!p.on('opacity') || !p.on('layerbar')) openOpacity(false);
+  if (!p.on('save')) saveMenu?.close();
+  if (!p.on('history') || !p.on('layerbar')) history?.close();
+}
 
 function setStatus(html) { statusEl.innerHTML = html; }
 
@@ -40,6 +64,7 @@ const opacity = {
 };
 
 function closePanels(except) {
+  if (except !== 'prefs') prefs?.close();
   if (except !== 'opacity') openOpacity(false);
   if (except !== 'save') saveMenu?.close();
   if (except !== 'history') history?.close();
@@ -152,7 +177,7 @@ function buildLayerUI() {
   // 透明度パネルを開くボタン
   const tool = document.createElement('button');
   tool.type = 'button';
-  tool.className = 'chip tool';
+  tool.className = 'chip tool op-chip';
   tool.setAttribute('aria-expanded', String(opacity.isOpen));
   tool.setAttribute('aria-controls', 'layerPanel');
   tool.innerHTML = `${SLIDERS}<span class="name">透明度</span>`;
@@ -281,9 +306,20 @@ async function main() {
     return;
   }
 
+  prefs = new Prefs({
+    page: 'viewer',
+    app,
+    panel: $('#prefsPanel'),
+    button: $('#prefsBtn'),
+    items: PREF_ITEMS,
+    config: latest,
+    onChange: onPrefs,
+    onOpen: () => { closePanels('prefs'); hintEl.classList.add('is-gone'); },
+  });
+
   history = new History({
     latest,
-    file: await historyFile,
+    file: siteOn(latest, 'history') ? await historyFile : null,  // 管理ページで過去の地図をオフにしているときは使わない
     onSelect: (v) => showVersion(v).then(() => toast(v.date ? `${v.long} の地図を表示しています` : '最新の地図を表示しています')),
     onOpen: () => closePanels('history'),
   });

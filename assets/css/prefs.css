@@ -1,0 +1,85 @@
+/* 表示の設定（閲覧ページ・お絵かきページ共通） */
+.prefs-panel {
+  position: absolute;
+  top: calc(var(--safe-t) + 68px);
+  right: calc(var(--safe-r) + 12px);
+  z-index: 30;
+  width: min(340px, calc(100vw - 24px));
+  max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - 96px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px 14px 14px;
+  border-radius: 16px;
+  background: rgba(20, 26, 46, .94);
+  border: 1px solid var(--glass-line);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .35);
+  color: var(--paper);
+}
+.prefs-panel[hidden] { display: none; }
+.prefs-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.prefs-head h2 { margin: 0; font-size: 15px; font-weight: 700; }
+.prefs-close {
+  width: 36px; height: 36px; border-radius: 50%; border: 0; background: transparent; color: var(--paper);
+  display: grid; place-items: center; cursor: pointer;
+}
+.prefs-close:hover { background: rgba(238, 241, 246, .08); }
+.prefs-close svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
+.prefs-note { margin: 4px 0 8px; font-size: 12px; line-height: 1.55; color: var(--mist); }
+.prefs-group { margin: 10px 0 0; padding: 0; border: 0; }
+.prefs-group legend { padding: 0; margin-bottom: 4px; font-size: 12.5px; color: var(--mist); }
+.prefs-item {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 40px; padding: 4px 6px; border-radius: 8px;
+  font-size: 14.5px; cursor: pointer;
+}
+.prefs-item:hover { background: rgba(238, 241, 246, .05); }
+.prefs-item input { width: 20px; height: 20px; margin: 0; accent-color: var(--brass); flex: none; }
+.prefs-foot { margin-top: 10px; border-top: 1px solid rgba(238, 241, 246, .08); padding-top: 8px; }
+.prefs-reset {
+  background: none; border: 0; padding: 6px 2px; color: var(--brass-hi);
+  font: inherit; font-size: 13.5px; cursor: pointer; text-decoration: underline;
+}
+.prefs-btn svg { width: 21px; height: 21px; }
+.viewer.ui-hidden .prefs-btn, .viewer.ui-hidden .prefs-panel { opacity: 0; visibility: hidden; pointer-events: none; }
+
+/* 狭い画面では「筒／平面」の文字を省いて、上の欄に収める */
+@media (max-width: 430px) {
+  .topbar .top-right { gap: 6px; }
+  .topbar .round-btn { width: 42px; height: 42px; }
+  .mode-switch button span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .mode-switch button { padding: 0 10px !important; }
+}
+
+/* ---- 閲覧ページ：隠す項目 ---- */
+.viewer:not(.draw).hide-history .hist-chip,
+.viewer:not(.draw).hide-opacity .op-chip,
+.viewer:not(.draw).hide-all .chip.all,
+.viewer:not(.draw).hide-auto #autoBtn,
+.viewer:not(.draw).hide-dial #dialWrap,
+.viewer:not(.draw).hide-reset #resetBtn,
+.viewer:not(.draw).hide-save #saveBtn,
+.viewer:not(.draw).hide-save #saveMenu,
+.viewer:not(.draw).hide-drawLink #drawLink,
+.viewer:not(.draw).hide-draw #drawLink,
+.viewer:not(.draw).hide-hint #hint,
+.viewer:not(.draw).hide-controls .controls,
+.viewer:not(.draw).hide-layerbar #layerbar { display: none !important; }
+
+/* ---- お絵かきページ：隠す項目 ---- */
+.draw.hide-tool-hand .tool-btn[data-tool="hand"],
+.draw.hide-tool-eraser .tool-btn[data-tool="eraser"],
+.draw.hide-tool-line .tool-btn[data-tool="line"],
+.draw.hide-tool-shape .tool-btn[data-tool="shape"],
+.draw.hide-tool-fill .tool-btn[data-tool="fill"],
+.draw.hide-tool-eyedropper .tool-btn[data-tool="eyedropper"],
+.draw.hide-undo #undoBtn,
+.draw.hide-undo #redoBtn,
+.draw.hide-undo .dock-sep,
+.draw.hide-cyl .mode-switch,
+.draw.hide-back .back-link,
+.draw.hide-draw-save .save-item[data-act="layers"],
+.draw.hide-draw-save .save-item[data-act="full"],
+.draw.hide-draw-save .save-item[data-act="view"],
+.draw.hide-draw-discord [data-discord] { display: none !important; }

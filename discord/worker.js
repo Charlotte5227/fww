@@ -634,11 +634,17 @@ function channelPerms(guild, member, channel) {
 
 const canPost = (p) => (p & NEED) === NEED;
 
+/** 自由選択を許可しないとき、送り先に選べるチャンネル（初期チャンネルを含む） */
+const fixedChannels = (s) => [...new Set([...(s.allowedChannels || []), s.defaultChannel].filter(Boolean))];
+const channelAllowed = (s, cid) => s.freeChoice !== false || fixedChannels(s).includes(cid);
+
 /* ---------- サーバーごとの設定（KV） ---------- */
 
 const DEFAULT_SETTINGS = {
   enabled: false,          // お絵かきページからの送信
   defaultChannel: '',      // 送り先の初期チャンネル
+  freeChoice: true,        // 送る人がチャンネルを自由に選べるか（false なら下の一覧と初期チャンネルだけ）
+  allowedChannels: [],     // 自由選択を許可しないときに選べるチャンネル
   sendMode: 'admins',      // 送れる人：admins（管理者だけ）| all | roles | users
   sendRoles: [],
   sendUsers: [],
@@ -786,7 +792,8 @@ async function apiTargets(env, s) {
     if (!c.member) { item.reason = 'not_member'; continue; }
     if (!c.bot || !c.guild) { item.reason = 'bot_no_access'; continue; }
     if (!canSendBySettings(st, c.member, basePerms(c.guild, c.member))) { item.reason = 'not_allowed'; continue; }
-    item.channels = postableChannels(c);
+    item.channels = postableChannels(c).filter((x) => channelAllowed(st, x.id));
+    item.free = st.freeChoice !== false;
     if (!item.channels.length) { item.reason = 'no_channel'; continue; }
     item.ok = true;
   }
@@ -830,6 +837,7 @@ async function apiSend(env, s, request) {
   if (!c.guild || !c.bot) return apiError('bot_no_access');
   if (!c.member) return apiError('not_member');
   if (!canSendBySettings(st, c.member, basePerms(c.guild, c.member))) return apiError('not_allowed');
+  if (!channelAllowed(st, cid)) return apiError('channel_not_allowed');
   if (!canPost(channelPerms(c.guild, c.member, ch.data))) return apiError('no_permission');
   if (!canPost(channelPerms(c.guild, c.bot, ch.data))) return apiError('bot_no_permission');
 
@@ -921,6 +929,7 @@ const ADMIN_HELP = [
   '**送信の設定**',
   '・「送信を有効にする」を押すと、お絵かきページの保存メニューの「Discordに送る」から、このサーバーに送れるようになります（最初は止まっています）。',
   '・初期チャンネル：送り先を選ぶときに、最初から選ばれているチャンネルです。',
+  '・チャンネルの自由選択：「許可」なら、送る人が書き込めるチャンネルから自由に選べます（最初の設定）。「許可しない」にすると、このメニューで選んだチャンネルと初期チャンネルにだけ送れます（チャンネル ID を直接入れても、ほかのチャンネルには送れません）。',
   '・送れる人：管理者だけ（最初の設定）／全員／ロールで指定／アカウントで指定。管理メニューを使える人は、いつでも送れます。',
   '・送る人は、Discord でログインして送ります。その人が書き込めないチャンネルや、Bot が見られないチャンネルには送れません。同じ人が送れるのは 30 秒に 1 回です。',
   '・送られる画像には本文がなく、ファイル名が「月-日-時分秒_DiscordID-送った人のID.png」になります。',
@@ -948,8 +957,15 @@ function adminPage(s, page, note = '') {
     ];
     if (s.sendMode === 'roles') rows.push(row({ type: 6, custom_id: 'as:sroles', placeholder: '送れるロールを選ぶ（複数可）', min_values: 0, max_values: 25, default_values: s.sendRoles.map((id) => ({ id, type: 'role' })) }));
     if (s.sendMode === 'users') rows.push(row({ type: 5, custom_id: 'as:susers', placeholder: '送れる人を選ぶ（複数可）', min_values: 0, max_values: 25, default_values: s.sendUsers.map((id) => ({ id, type: 'user' })) }));
-    rows.push(backRow());
-    return { content: `${head}**📤 送信の設定**\n初期チャンネル：${chM(s.defaultChannel)}\n送れる人：${senderText(s)}`, components: rows };
+    const free = s.freeChoice !== false;
+    if (!free) rows.push(row({ type: 8, custom_id: 'as:allowch', placeholder: '送り先に選べるチャンネル（複数可）', channel_types: CHANNEL_TYPES, min_values: 0, max_values: 25, default_values: (s.allowedChannels || []).map((id) => ({ id, type: 'channel' })) }));
+    rows.push(backRow(free
+      ? btn('as:free', 'チャンネルの自由選択：許可', 3)
+      : btn('as:free', 'チャンネルの自由選択：許可しない', 4)));
+    const choice = free
+      ? '✅ 許可（送る人が、自分と Bot が書き込めるチャンネルから自由に選べます）'
+      : `⛔ 許可しない（選べるのは ${list(fixedChannels(s), chM, '（まだ選ばれていません）')} だけ）`;
+    return { content: `${head}**📤 送信の設定**\n初期チャンネル：${chM(s.defaultChannel)}\n送れる人：${senderText(s)}\nチャンネルの自由選択：${choice}`, components: rows };
   }
   if (page === 'admins') {
     return {
@@ -983,6 +999,7 @@ function adminPage(s, page, note = '') {
       head + '**⚙️ 地図の管理メニュー**（このサーバーの設定・自分にだけ見えます）',
       `お絵かきページからの送信：${s.enabled ? '✅ 有効' : '⛔ 止めています'}`,
       `送信先の初期チャンネル：${chM(s.defaultChannel)}`,
+      `チャンネルの自由選択：${s.freeChoice !== false ? '許可' : `許可しない（${list(fixedChannels(s), chM, '未選択')}）`}`,
       `送れる人：${senderText(s)}`,
       `管理メニューを使える人：サーバー管理者${s.adminRoles.length ? `、${list(s.adminRoles, roleM)}` : ''}${s.adminUsers.length ? `、${list(s.adminUsers, userM)}` : ''}`,
       `パスワード：${s.pw ? '設定済み' : '未設定'}`,
@@ -1071,6 +1088,11 @@ async function adminComponent(env, interaction) {
   if (id === 'as:susers') { s.sendUsers = values; return save('send', '✅ 送れる人を変更しました。'); }
   if (id === 'as:aroles') { s.adminRoles = values; return save('admins', '✅ 管理メニューを使えるロールを変更しました。'); }
   if (id === 'as:ausers') { s.adminUsers = values; return save('admins', '✅ 管理メニューを使える人を変更しました。'); }
+  if (id === 'as:free') {
+    s.freeChoice = s.freeChoice === false;
+    return save('send', s.freeChoice ? '✅ チャンネルの自由選択を許可しました。' : '⛔ チャンネルの自由選択を止めました。下の欄で、送り先に選べるチャンネルを選んでください（初期チャンネルも選べます）。');
+  }
+  if (id === 'as:allowch') { s.allowedChannels = values; return save('send', '✅ 送り先に選べるチャンネルを変更しました。'); }
   if (id === 'as:notify') { s.notifyChannel = values[0] || ''; return save('pass', '✅ 通知先を変更しました。'); }
   if (id === 'as:pw') return json(pwModal());
   if (id === 'as:pwoff') { s.pw = null; return save('pass', '✅ パスワードをなくしました。パスワードでは開けなくなります。'); }

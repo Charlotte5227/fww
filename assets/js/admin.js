@@ -1,6 +1,7 @@
 // 管理サイト
 import { Stage } from './engine.js?v=20261028-1';
 import { GitHubClient, guessRepo } from './github.js?v=20261028-1';
+import { SITE_FEATURES } from './prefs.js?v=20261028-6';
 
 const $ = (s, el = document) => el.querySelector(s);
 const STORE_KEY = 'cylinder-viewer:github';
@@ -267,7 +268,53 @@ function renderAll() {
   $('#discordWorker').value = c.discord?.workerUrl || '';
   renderOutputs();
   renderLayers();
+  renderFeatures();
   renderHistory();
+}
+
+/** 機能のオン・オフ（features にはオフにしたものだけを書く） */
+function renderFeatures() {
+  const box = $('#featureList');
+  box.replaceChildren();
+  const groups = new Map();
+  for (const f of SITE_FEATURES) {
+    if (!groups.has(f.group)) {
+      const fs = document.createElement('fieldset');
+      fs.className = 'feature-group';
+      const lg = document.createElement('legend');
+      lg.textContent = f.group;
+      fs.append(lg);
+      groups.set(f.group, fs);
+      box.append(fs);
+    }
+    const label = document.createElement('label');
+    label.className = 'check';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = state.config.features?.[f.key] !== false;
+    input.addEventListener('change', () => {
+      const feats = { ...(state.config.features || {}) };
+      if (input.checked) delete feats[f.key]; else feats[f.key] = false;
+      if (Object.keys(feats).length) state.config.features = feats; else delete state.config.features;
+      if (f.key === 'draw') syncDrawGroup();
+      markDirty();
+    });
+    input.dataset.key = f.key;
+    const span = document.createElement('span');
+    span.textContent = f.label;
+    label.append(input, span);
+    groups.get(f.group).append(label);
+  }
+  syncDrawGroup();
+}
+
+/** お絵かきページ自体をオフにしたら、その中の項目は選べないように見せる */
+function syncDrawGroup() {
+  const off = state.config.features?.draw === false;
+  document.querySelectorAll('#featureList input').forEach((i) => {
+    const f = SITE_FEATURES.find((x) => x.key === i.dataset.key);
+    if (f.group === 'お絵かきページ' && f.key !== 'draw') i.closest('label').classList.toggle('is-muted', off);
+  });
 }
 
 function renderOutputs() {

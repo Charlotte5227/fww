@@ -1,6 +1,6 @@
 // お絵かきのツール
-import { TILE, newCanvas } from './doc.js?v=20261028-5';
-import { floodRegion } from './fill.js?v=20261028-5';
+import { TILE, newCanvas } from './doc.js?v=20261028-6';
+import { floodRegion } from './fill.js?v=20261028-6';
 
 const hexToRgb = (hex) => {
   const n = parseInt(String(hex).replace('#', ''), 16) || 0;
@@ -70,7 +70,7 @@ class Brush {
 
   down(p, e) {
     const { app } = this;
-    if (e.altKey && !this.erase) { app.tools.eyedropper.pick(p); return; }
+    if (e.altKey && !this.erase && app.toolOn('eyedropper')) { app.tools.eyedropper.pick(p); return; }
     this.layer = app.target(this.erase ? '消しゴム' : 'ペン');
     if (!this.layer) return;
     app.history.begin(this.erase ? '消しゴム' : 'ペン');

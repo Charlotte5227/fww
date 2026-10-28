@@ -2,7 +2,7 @@
 //
 // 描いた操作は、書き換えたタイルの「前」と「後」を覚えておく。
 // 覚えた画像はすぐに PNG に圧縮して、メモリを節約する。
-import { TILE } from './doc.js?v=20261028-5';
+import { TILE } from './doc.js?v=20261028-6';
 
 const MAX_STEPS = 50;
 const MAX_BYTES = 160 * 1024 * 1024;

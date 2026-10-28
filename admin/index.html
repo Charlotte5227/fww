@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
   <link rel="stylesheet" href="../assets/css/stage.css?v=20261028-1">
-  <link rel="stylesheet" href="../assets/css/admin.css?v=20261028-4">
+  <link rel="stylesheet" href="../assets/css/admin.css?v=20261028-6">
 </head>
 <body>
   <header class="head">
@@ -145,6 +145,12 @@
       </section>
 
       <!-- 履歴 -->
+      <section class="panel" id="featuresPanel">
+        <h2>機能のオン・オフ</h2>
+        <p class="desc">チェックを外した機能は、公開すると全員の画面から消えます。ここでオンになっている機能の中から、見る人がそれぞれ「⚙ 表示の設定」で、自分に必要なものだけを表示できます。</p>
+        <div class="feature-groups" id="featureList"></div>
+      </section>
+
       <section class="panel" id="historyPanel">
         <h2>履歴</h2>
         <p class="desc">公開した地図を記録として残し、閲覧ページや Discord で過去の地図を見られるようにします。1日に何回でも記録できます。</p>
@@ -252,6 +258,6 @@
   </template>
 
   <script src="../assets/vendor/jszip.min.js" defer></script>
-  <script type="module" src="../assets/js/admin.js?v=20261028-4"></script>
+  <script type="module" src="../assets/js/admin.js?v=20261028-6"></script>
 </body>
 </html>

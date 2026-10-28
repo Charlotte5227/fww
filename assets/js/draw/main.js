@@ -1,10 +1,11 @@
 // お絵かきページ
-import { Doc, TILE, MAX_DRAW_LAYERS, newId, newCanvas, isEmpty, bumpRev } from './doc.js?v=20261028-5';
-import { Board } from './view.js?v=20261028-5';
-import { History } from './history.js?v=20261028-5';
-import { Store } from './store.js?v=20261028-5';
-import { createTools, formatLength } from './tools.js?v=20261028-5';
-import { createDiscord } from './discord.js?v=20261028-5';
+import { Doc, TILE, MAX_DRAW_LAYERS, newId, newCanvas, isEmpty, bumpRev } from './doc.js?v=20261028-6';
+import { Board } from './view.js?v=20261028-6';
+import { History } from './history.js?v=20261028-6';
+import { Store } from './store.js?v=20261028-6';
+import { createTools, formatLength } from './tools.js?v=20261028-6';
+import { createDiscord } from './discord.js?v=20261028-6';
+import { Prefs, siteOn } from '../prefs.js?v=20261028-6';
 import { safeName, stamp, canvasToBlob, loadJSZip, deliver } from '../save.js?v=20261028-1';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -74,6 +75,11 @@ async function main() {
   const title = config.title || '地図';
   $('#title').textContent = title;
   document.title = `お絵かき｜${title}`;
+  if (!siteOn(config, 'draw')) {
+    statusEl.innerHTML = '<p>お絵かきページは、今は使えないように設定されています。<br><a href="../">閲覧ページに戻る</a></p>';
+    $('#dockWrap').hidden = true;
+    return;
+  }
   const widthKm = Number(config.display?.widthKm) || 0;
 
   // 地図の画像（最新の地図だけ）
@@ -127,6 +133,7 @@ async function main() {
   if (config.background?.color) app.board.background = config.background.color;
   app.selectedId = doc.activeId || doc.layers.at(-1)?.id;
 
+  initPrefs();
   initDock();
   initColor();
   initLayers();
@@ -327,9 +334,12 @@ function applyOrder(order) {
 
 /* ---------- ツールのバーと設定 ---------- */
 
+/** 道具が使えるか（管理ページと「表示の設定」の両方でオン） */
+app.toolOn = (id) => id === 'pen' || !app.prefs || app.prefs.on(`tool-${id}`);
+
 function selectTool(id) {
   const next = app.tools[id];
-  if (!next) return;
+  if (!next || !app.toolOn(id)) return;
   if (app.tool && app.tool !== next) app.tool.deactivate?.();
   if (app.tool && app.tool.id !== 'eyedropper' && app.tool !== next) app.prevTool = app.tool.id;
   app.tool = next;
@@ -528,6 +538,7 @@ function togglePop(id, btnId, open) {
 }
 
 function closePops() {
+  app.prefs?.close();
   for (const [id, btn] of POPS) {
     $(`#${id}`).hidden = true;
     $(`#${btn}`).setAttribute('aria-expanded', 'false');
@@ -857,9 +868,42 @@ async function discordImage(kind, layerId) {
   return { canvas, blob };
 }
 
+const hasDiscord = () => /^https:\/\//.test(String(app.config.discord?.workerUrl || '').trim());
+
+/* ---------- 表示の設定（自分用）と、管理ページで決めた機能のオン・オフ ---------- */
+
+function initPrefs() {
+  const items = [
+    { key: 'tool-hand', group: '道具', label: '移動' },
+    { key: 'tool-eraser', group: '道具', label: '消しゴム', site: 'tool-eraser' },
+    { key: 'tool-line', group: '道具', label: '定規', site: 'tool-line' },
+    { key: 'tool-shape', group: '道具', label: '図形', site: 'tool-shape' },
+    { key: 'tool-fill', group: '道具', label: '塗りつぶし', site: 'tool-fill' },
+    { key: 'tool-eyedropper', group: '道具', label: 'スポイト', site: 'tool-eyedropper' },
+    { key: 'undo', group: '下のバー', label: '元に戻す・やり直すボタン（Ctrl+Z・Ctrl+Y はそのまま使えます）' },
+    { key: 'cyl', group: '上の欄', label: '筒・平面の切り替え' },
+    { key: 'back', group: '上の欄', label: '閲覧ページに戻るボタン' },
+    { key: 'draw-save', group: '保存メニュー', label: '画像の保存（レイヤー・地図全体・表示範囲）', site: 'draw-save' },
+  ];
+  if (hasDiscord()) items.push({ key: 'draw-discord', group: '保存メニュー', label: 'Discordに送る', site: 'draw-discord' });
+  app.prefs = new Prefs({
+    page: 'draw',
+    app: appEl,
+    panel: $('#prefsPanel'),
+    button: $('#prefsBtn'),
+    items,
+    config: app.config,
+    onOpen: () => closePops(),
+    onChange: () => {
+      if (app.tool && !app.toolOn(app.tool.id)) selectTool('pen');
+      if (!app.prefs?.on('cyl') && appEl.classList.contains('is-cylinder')) app.setMode?.('flat');
+    },
+  });
+}
+
 function initDiscord() {
   const url = String(app.config.discord?.workerUrl || '').trim();
-  if (!/^https:\/\//.test(url)) return;
+  if (!hasDiscord() || !siteOn(app.config, 'draw-discord')) return;
   document.querySelectorAll('[data-discord]').forEach((el) => { el.hidden = false; });
   app.discord = createDiscord({
     worker: url,
@@ -998,7 +1042,7 @@ function initSave() {
     run($('.save-item[data-act=work-load]'), () => loadWork(f));
   });
   document.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.pop, .save-menu, .dock, .opts, .banner')) return;
+    if (e.target.closest('.pop, .save-menu, .dock, .opts, .banner, .prefs-panel, #prefsBtn')) return;
     if (e.target.closest('#board')) return;  // 地図の上は Board 側で閉じる
     closePops();
   });

@@ -364,3 +364,9 @@ input[type="range"] { width: 100%; accent-color: var(--brass-deep); height: 32px
   .layer.is-new { animation: none; }
   .toast, .bar span { transition: none; }
 }
+
+/* 機能のオン・オフ */
+.feature-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 4px 20px; }
+.feature-group { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; }
+.feature-group legend { padding: 0; margin: 6px 0 2px; font-size: 13px; font-weight: 700; color: var(--ink-soft, #5b6478); }
+.feature-group .check.is-muted { opacity: .45; }
