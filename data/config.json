@@ -67,5 +67,8 @@
     "rotateSpeed": 6,
     "shading": 0.55,
     "startAngle": 180
+  },
+  "discord": {
+    "workerUrl": "https://snowy-fire-cc6b.h-kanato-1019.workers.dev"
   }
 }
