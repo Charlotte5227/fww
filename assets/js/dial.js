@@ -1,5 +1,5 @@
 // 下部の回転ダイヤル（現在の向きを示し、ドラッグでも回せる）
-import { mod360 } from './engine.js?v=20261027-3';
+import { mod360 } from './engine.js?v=20261028-1';
 
 export class Dial {
   constructor(canvas, { span = 120, onDrag } = {}) {

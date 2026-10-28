@@ -1,6 +1,6 @@
 // 管理サイト
-import { Stage } from './engine.js?v=20261027-3';
-import { GitHubClient, guessRepo } from './github.js?v=20261027-3';
+import { Stage } from './engine.js?v=20261028-1';
+import { GitHubClient, guessRepo } from './github.js?v=20261028-1';
 
 const $ = (s, el = document) => el.querySelector(s);
 const STORE_KEY = 'cylinder-viewer:github';
@@ -263,6 +263,7 @@ function renderAll() {
   $('#rotateSpeed').value = d.rotateSpeed;
   $('#shading').value = d.shading;
   $('#startAngle').value = d.startAngle;
+  $('#widthKm').value = d.widthKm > 0 ? d.widthKm : '';
   renderOutputs();
   renderLayers();
   renderHistory();
@@ -273,6 +274,7 @@ function renderOutputs() {
   $('#speedOut').textContent = `1周 約${Math.round(360 / d.rotateSpeed)}秒`;
   $('#shadingOut').textContent = d.shading <= 0 ? 'なし' : `${Math.round(d.shading * 100)}%`;
   $('#angleOut').textContent = `${Math.round(d.startAngle)}°（画像の左から${Math.round(d.startAngle / 3.6)}%の位置が正面）`;
+  $('#widthKmOut').textContent = d.widthKm > 0 ? `${Number(d.widthKm).toLocaleString('ja-JP')} km` : '未設定';
 }
 
 function afterImport(r) {
@@ -415,6 +417,12 @@ function bindInputs() {
     c().display.startAngle = Number(e.target.value);
     renderOutputs();
     stage.setAngle(c().display.startAngle);
+    markDirty();
+  });
+  $('#widthKm').addEventListener('input', (e) => {
+    const v = Number(e.target.value);
+    if (v > 0) c().display.widthKm = v; else delete c().display.widthKm;
+    renderOutputs();
     markDirty();
   });
   $('#useAngle').addEventListener('click', () => {

@@ -76,6 +76,8 @@ svg { display: block; }
 }
 .round-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .round-btn .i-eye-off { display: none; }
+a.round-btn { text-decoration: none; }
+.draw-link:hover { background: rgba(40, 48, 78, .8); }
 .round-btn[aria-pressed="true"] .i-eye { display: none; }
 .round-btn[aria-pressed="true"] .i-eye-off { display: block; }
 
@@ -451,6 +453,7 @@ button:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: 2px; 
 .viewer .layer-panel,
 .viewer .save-menu { transition: opacity .25s ease, visibility .25s; }
 .viewer.ui-hidden .topbar .title,
+.viewer.ui-hidden .draw-link,
 .viewer.ui-hidden .mode-switch,
 .viewer.ui-hidden .layerbar,
 .viewer.ui-hidden .controls,

@@ -1,8 +1,8 @@
 // 閲覧サイト
-import { Stage } from './engine.js?v=20261027-3';
-import { Dial } from './dial.js?v=20261027-3';
-import { SaveMenu } from './save.js?v=20261027-3';
-import { History } from './history.js?v=20261027-3';
+import { Stage } from './engine.js?v=20261028-1';
+import { Dial } from './dial.js?v=20261028-1';
+import { SaveMenu } from './save.js?v=20261028-1';
+import { History } from './history.js?v=20261028-1';
 
 const $ = (s) => document.querySelector(s);
 const app = $('#app');

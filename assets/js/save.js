@@ -8,21 +8,21 @@ export function safeName(name, fallback = '画像') {
   return s || fallback;
 }
 
-function stamp(d = new Date()) {
+export function stamp(d = new Date()) {
   const p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 
-function canvasToBlob(canvas) {
+export function canvasToBlob(canvas) {
   return new Promise((ok, ng) => canvas.toBlob((b) => (b ? ok(b) : ng(new Error('画像を作成できませんでした'))), 'image/png'));
 }
 
 let jszipPromise;
-function loadJSZip() {
+export function loadJSZip(base = 'assets/vendor/') {
   if (window.JSZip) return Promise.resolve(window.JSZip);
   jszipPromise ||= new Promise((ok, ng) => {
     const s = document.createElement('script');
-    s.src = 'assets/vendor/jszip.min.js';
+    s.src = `${base}jszip.min.js`;
     s.onload = () => ok(window.JSZip);
     s.onerror = () => { jszipPromise = null; ng(new Error('ZIP 機能を読み込めませんでした')); };
     document.head.append(s);
@@ -35,7 +35,7 @@ function loadJSZip() {
  * それ以外ではダウンロードを使う。
  * @returns {Promise<'shared'|'downloaded'|'cancelled'>}
  */
-async function deliver(blob, filename) {
+export async function deliver(blob, filename) {
   const file = new File([blob], filename, { type: blob.type || 'application/octet-stream' });
   const touch = matchMedia('(pointer: coarse)').matches;
   if (touch && navigator.canShare?.({ files: [file] })) {

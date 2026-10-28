@@ -317,7 +317,7 @@ export class Stage {
   }
 
   _updateCamera() {
-    if (!this.gl) return;
+    if (!this.gl || !this.radius) return;  // 筒の形が決まる前（画像の読み込み前）は何もしない
     const d = this._fitDistance();
     this.dist = d;
     const fov = clamp(BASE_FOV / this.zoom, 2, 80);
@@ -346,14 +346,22 @@ export class Stage {
 
   /* ---------- 合成 ---------- */
 
+  /** 外で合成した画像（お絵かきページなど）をそのまま表示する。null で通常の表示に戻す */
+  setSource(canvas) {
+    this.external = canvas || null;
+    this._compose();
+    this._emitState(this.composite.width ? 'ready' : 'empty');
+  }
+
   _compose() {
     const cfg = this.config || {};
     const pick = (src) => (src ? this.images.ready.get(src) || null : null);
-    const baseImg = pick(cfg.base?.src);
-    const layers = (cfg.layers || []).map((l) => ({ l, img: pick(l.src) }));
+    const ext = this.external;
+    const baseImg = ext ? null : pick(cfg.base?.src);
+    const layers = ext ? [] : (cfg.layers || []).map((l) => ({ l, img: pick(l.src) }));
 
-    let w = baseImg?.naturalWidth || 0;
-    let h = baseImg?.naturalHeight || 0;
+    let w = ext ? ext.width : baseImg?.naturalWidth || 0;
+    let h = ext ? ext.height : baseImg?.naturalHeight || 0;
     if (!w) for (const { img } of layers) if (img && img.naturalWidth * img.naturalHeight > w * h) { w = img.naturalWidth; h = img.naturalHeight; }
     const c = this.composite;
     if (!w || !h) {
@@ -370,6 +378,7 @@ export class Stage {
     const ctx = this.compositeCtx;
     ctx.clearRect(0, 0, cw, ch);
     ctx.imageSmoothingQuality = 'high';
+    if (ext) ctx.drawImage(ext, 0, 0, cw, ch);
     if (baseImg) ctx.drawImage(baseImg, 0, 0, cw, ch);
     for (const { l, img } of layers) {
       if (!img || !this.isLayerVisible(l.id)) continue;

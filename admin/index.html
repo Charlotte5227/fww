@@ -9,8 +9,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
-  <link rel="stylesheet" href="../assets/css/stage.css?v=20261027-3">
-  <link rel="stylesheet" href="../assets/css/admin.css?v=20261027-3">
+  <link rel="stylesheet" href="../assets/css/stage.css?v=20261028-1">
+  <link rel="stylesheet" href="../assets/css/admin.css?v=20261028-1">
 </head>
 <body>
   <header class="head">
@@ -134,6 +134,10 @@
             <button type="button" class="btn small" id="useAngle">プレビューの向きにする</button>
           </div>
         </div>
+        <label class="field"><span>地図の横幅（一周の長さ） <output id="widthKmOut"></output></span>
+          <input type="number" id="widthKm" min="0" step="any" inputmode="decimal" placeholder="例：40000">
+        </label>
+        <p class="desc">km で入れると、お絵かきページの定規で長さが km で表示されます。空欄のときはピクセルで表示します。</p>
       </section>
 
       <!-- 履歴 -->
@@ -244,6 +248,6 @@
   </template>
 
   <script src="../assets/vendor/jszip.min.js" defer></script>
-  <script type="module" src="../assets/js/admin.js?v=20261027-3"></script>
+  <script type="module" src="../assets/js/admin.js?v=20261028-1"></script>
 </body>
 </html>
