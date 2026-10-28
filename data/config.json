@@ -70,8 +70,5 @@
   },
   "discord": {
     "workerUrl": "https://snowy-fire-cc6b.h-kanato-1019.workers.dev"
-  },
-  "features": {
-    "draw-discord": false
   }
 }
