@@ -83,7 +83,8 @@ def main():
         sys.exit(f"登録に失敗しました: {r.status_code} {r.text}")
     print("登録しました:", ", ".join(c["name"] for c in r.json()))
     print("招待URL（お絵かきページからの送信を使うときは、Bot ごとサーバーに入れ直してください）:")
-    print(f"https://discord.com/oauth2/authorize?client_id={app_id}&scope=bot+applications.commands&permissions={BOT_PERMISSIONS}")
+    # サーバーに入れる（integration_type=0）ことをはっきり書く。bot には applications.commands も含まれる
+    print(f"https://discord.com/oauth2/authorize?client_id={app_id}&permissions={BOT_PERMISSIONS}&integration_type=0&scope=bot")
 
 
 if __name__ == "__main__":

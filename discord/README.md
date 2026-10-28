@@ -165,7 +165,10 @@ Worker から Actions に返信先を渡すときは暗号化しているので�
 ### D. コマンドを登録し直して、Bot をサーバーに入れる
 
 1. リポジトリの「Actions」→「Discord コマンド登録」→「Run workflow」をもう一度実行します（`/地図設定` が追加されます）。
-2. 実行記録の最後に表示される招待 URL（`scope=bot+applications.commands` のもの）を開き、使いたいサーバーに追加します。
+2. 実行記録の最後に表示される招待 URL（`scope=bot` のもの）を開き、使いたいサーバーに追加します。
+   URL は次の形です（`アプリのID` は Application ID）。
+   `https://discord.com/oauth2/authorize?client_id=アプリのID&permissions=52224&integration_type=0&scope=bot`
+   「フォーム本体が無効です（Invalid Form Body）」と出るときは、Developer Portal の「Installation」で「Guild Install」の「Scopes」に `bot` を追加し、「Permissions」に View Channels・Send Messages・Attach Files・Embed Links を選んで保存してから、同じページの「Install Link」（Discord Provided Link）を使って追加してください。
    今までは「コマンドだけ」が入っていましたが、画像を送るには **Bot 本体** がサーバーにいる必要があります。権限は「チャンネルを見る」「メッセージを送信」「ファイルを添付」「埋め込みリンク」です。
    - 送らせたいチャンネルで、Bot（またはそのロール）がメッセージを送れる・ファイルを添付できるようにしておいてください。
 
