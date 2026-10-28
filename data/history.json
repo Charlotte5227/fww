@@ -5,7 +5,7 @@
       "id": "mvqwh8ylyk7hm",
       "date": "2026-10-28",
       "time": "00:26",
-      "savedAt": "2026-10-27T16:28:55.581Z",
+      "savedAt": "2026-10-28T06:01:03.694Z",
       "memo": "No.3.1",
       "config": {
         "version": 1,
@@ -32,7 +32,7 @@
           {
             "id": "mvotd7pxsenwo",
             "name": "国家",
-            "src": "data/images/mvqu7q0juv1vg.png",
+            "src": "data/images/mvrph0t6v29jz.png",
             "visible": true,
             "opacity": 1
           },
@@ -76,6 +76,9 @@
           "rotateSpeed": 6,
           "shading": 0.55,
           "startAngle": 180
+        },
+        "discord": {
+          "workerUrl": "https://snowy-fire-cc6b.h-kanato-1019.workers.dev"
         }
       }
     },
