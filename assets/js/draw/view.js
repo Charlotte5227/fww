@@ -414,8 +414,11 @@ export class Board {
 
     el.addEventListener('pointermove', (e) => {
       if (e.pointerType === 'mouse' || e.pointerType === 'pen') {
-        this.hover = this.toMap(e.clientX, e.clientY);
-        if (!pts.size) { tool()?.hover?.(this.hover, e, this); this.drawOverlay(); }
+        // 画面（ボード）の外にいるときは、ペン先の円を出さない
+        const r = el.getBoundingClientRect();
+        const inside = e.clientX >= r.left && e.clientX < r.right && e.clientY >= r.top && e.clientY < r.bottom;
+        this.hover = inside ? this.toMap(e.clientX, e.clientY) : null;
+        if (!pts.size) { if (this.hover) tool()?.hover?.(this.hover, e, this); this.drawOverlay(); }
       }
       if (!pts.has(e.pointerId)) return;
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
@@ -447,7 +450,16 @@ export class Board {
     };
     el.addEventListener('pointerup', end);
     el.addEventListener('pointercancel', end);
-    el.addEventListener('pointerleave', () => { this.hover = null; this.drawOverlay(); });
+    // マウスがページの外（タブの並びなど）へ出たら、ペン先の円を消す。
+    // 素早く出たときに pointerleave が届かないことがあるので、いくつかの合図で消す
+    const clearHover = () => { if (this.hover) { this.hover = null; this.drawOverlay(); } };
+    el.addEventListener('pointerleave', clearHover);
+    el.addEventListener('pointerout', (e) => { if (!e.relatedTarget || !el.contains(e.relatedTarget)) clearHover(); });
+    document.addEventListener('mouseleave', clearHover);
+    document.documentElement.addEventListener('mouseleave', clearHover);
+    window.addEventListener('mouseout', (e) => { if (!e.relatedTarget) clearHover(); });
+    window.addEventListener('blur', clearHover);
+    document.addEventListener('visibilitychange', clearHover);
     el.addEventListener('contextmenu', (e) => e.preventDefault());
 
     el.addEventListener('wheel', (e) => {

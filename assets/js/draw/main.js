@@ -1,10 +1,10 @@
 // お絵かきページ
-import { Doc, TILE, MAX_DRAW_LAYERS, newId, newCanvas, isEmpty, bumpRev } from './doc.js?v=20261028-4';
-import { Board } from './view.js?v=20261028-4';
-import { History } from './history.js?v=20261028-4';
-import { Store } from './store.js?v=20261028-4';
-import { createTools, formatLength } from './tools.js?v=20261028-4';
-import { createDiscord } from './discord.js?v=20261028-4';
+import { Doc, TILE, MAX_DRAW_LAYERS, newId, newCanvas, isEmpty, bumpRev } from './doc.js?v=20261028-5';
+import { Board } from './view.js?v=20261028-5';
+import { History } from './history.js?v=20261028-5';
+import { Store } from './store.js?v=20261028-5';
+import { createTools, formatLength } from './tools.js?v=20261028-5';
+import { createDiscord } from './discord.js?v=20261028-5';
 import { safeName, stamp, canvasToBlob, loadJSZip, deliver } from '../save.js?v=20261028-1';
 
 const $ = (s, el = document) => el.querySelector(s);

@@ -1,6 +1,6 @@
 // お絵かきのツール
-import { TILE, newCanvas } from './doc.js?v=20261028-4';
-import { floodRegion } from './fill.js?v=20261028-4';
+import { TILE, newCanvas } from './doc.js?v=20261028-5';
+import { floodRegion } from './fill.js?v=20261028-5';
 
 const hexToRgb = (hex) => {
   const n = parseInt(String(hex).replace('#', ''), 16) || 0;
