@@ -1,6 +1,6 @@
 // お絵かきのツール
-import { TILE, newCanvas } from './doc.js?v=20261028-1';
-import { floodRegion } from './fill.js?v=20261028-1';
+import { TILE, newCanvas } from './doc.js?v=20261028-2';
+import { floodRegion } from './fill.js?v=20261028-2';
 
 const hexToRgb = (hex) => {
   const n = parseInt(String(hex).replace('#', ''), 16) || 0;
@@ -38,6 +38,13 @@ export function formatLength(px, kmPerPx) {
     return km >= 100 ? `${Math.round(km).toLocaleString('ja-JP')} km` : `${km.toFixed(km >= 10 ? 1 : 2)} km`;
   }
   return `${Math.round(px).toLocaleString('ja-JP')} px`;
+}
+
+/** 基準の点 ref を枠の中に置いたときの、ほかの点の画面位置（つながった図形がばらばらに回り込まないように） */
+function screenFrom(board, ref) {
+  const r = board.toScreen(ref.x, ref.y);
+  const s = board.cam.s;
+  return (x, y) => ({ x: r.x + (x - ref.x) * s, y: r.y + (y - ref.y) * s });
 }
 
 function label(o, text, x, y) {
@@ -243,15 +250,16 @@ class Ruler {
       o.stroke();
     });
     // 点と長さ
+    const scr = screenFrom(board, pts[0]);
     o.save();
     for (const q of this.points) {
-      const s = board.toScreen(q.x, q.y);
+      const s = scr(q.x, q.y);
       o.beginPath(); o.arc(s.x, s.y, 4.5, 0, Math.PI * 2);
       o.fillStyle = '#fff'; o.fill(); o.strokeStyle = '#141a2e'; o.lineWidth = 1.5; o.stroke();
     }
     o.restore();
     if (pts.length >= 2) {
-      const end = board.toScreen(pts.at(-1).x, pts.at(-1).y);
+      const end = scr(pts.at(-1).x, pts.at(-1).y);
       label(o, formatLength(this.length(pts), app.kmPerPx), end.x, end.y - 6);
     }
   }
@@ -445,18 +453,20 @@ class Shapes {
     });
     if (this.op?.kind === 'create') return;
     // 調整用の枠とつまみ
+    const hs = Object.values(this.handles());
+    const scr = screenFrom(board, hs[0]);
     o.save();
     if (!isSeg(s)) {
       const b = this.box(s);
-      const p0 = board.toScreen(b.x0, b.y0), p1 = board.toScreen(b.x1, b.y1);
+      const p0 = scr(b.x0, b.y0), p1 = scr(b.x1, b.y1);
       o.setLineDash([5, 4]);
       o.strokeStyle = 'rgba(255,255,255,.9)';
       o.lineWidth = 1;
       o.strokeRect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y);
       o.setLineDash([]);
     }
-    for (const h of Object.values(this.handles())) {
-      const q = board.toScreen(h.x, h.y);
+    for (const h of hs) {
+      const q = scr(h.x, h.y);
       o.beginPath();
       o.arc(q.x, q.y, 7, 0, Math.PI * 2);
       o.fillStyle = '#fff';

@@ -1,9 +1,9 @@
 // お絵かきページ
-import { Doc, TILE, MAX_DRAW_LAYERS, newId, newCanvas, isEmpty } from './doc.js?v=20261028-1';
-import { Board } from './view.js?v=20261028-1';
-import { History } from './history.js?v=20261028-1';
-import { Store } from './store.js?v=20261028-1';
-import { createTools, formatLength } from './tools.js?v=20261028-1';
+import { Doc, TILE, MAX_DRAW_LAYERS, newId, newCanvas, isEmpty } from './doc.js?v=20261028-2';
+import { Board } from './view.js?v=20261028-2';
+import { History } from './history.js?v=20261028-2';
+import { Store } from './store.js?v=20261028-2';
+import { createTools, formatLength } from './tools.js?v=20261028-2';
 import { safeName, stamp, canvasToBlob, loadJSZip, deliver } from '../save.js?v=20261028-1';
 
 const $ = (s, el = document) => el.querySelector(s);

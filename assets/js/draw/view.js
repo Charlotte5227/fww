@@ -84,9 +84,27 @@ export class Board {
     };
   }
 
-  /** 地図の座標 → 画面（CSS px） */
+  /** 地図の座標 → 画面（CSS px）。左右は枠の中に来る位置に回り込ませる */
   toScreen(x, y) {
-    return { x: (x - this.cam.x) * this.cam.s + this.size.w / 2, y: (y - this.cam.y) * this.cam.s + this.size.h / 2 };
+    const W = this.doc.w;
+    let dx = (((x - this.cam.x + W / 2) % W) + W) % W - W / 2;
+    if (!Number.isFinite(dx)) dx = x - this.cam.x;
+    return { x: dx * this.cam.s + this.size.w / 2, y: (y - this.cam.y) * this.cam.s + this.size.h / 2 };
+  }
+
+  /**
+   * 地図を表示する枠（画面の CSS px）。閲覧ページの平面表示と同じく、枠の大きさは元の画像と同じで、
+   * 左右に動かすと枠の中で地図が回り込む。枠は常に画面の左右中央。
+   */
+  frame() {
+    const { w, h } = this.size;
+    const s = this.cam.s;
+    const fw = this.doc.w * s;
+    const top = h / 2 - this.cam.y * s;
+    return {
+      x0: Math.max(0, w / 2 - fw / 2), x1: Math.min(w, w / 2 + fw / 2),
+      y0: Math.max(0, top), y1: Math.min(h, top + this.doc.h * s),
+    };
   }
 
   /** 今画面に見えている地図の範囲 */
@@ -116,21 +134,25 @@ export class Board {
   }
 
   draw() {
-    const { w, h, dpr } = this.size;
+    const { w, dpr } = this.size;
     const ctx = this.ctx;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = this.background;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    const v = this.visibleRect();
-    const s = this.cam.s * dpr;
-    // 地図の上下の外側は描かない
-    const y0 = Math.max(0, v.y), y1 = Math.min(this.doc.h, v.y + v.h);
-    if (y1 > y0) {
+    const f = this.frame();
+    if (f.x1 > f.x0 && f.y1 > f.y0) {
+      const S = this.cam.s * dpr;
+      // 枠の左右の端を実ピクセルにそろえ、枠の中だけを描く（左右は最大でも 2 つに分かれるだけ）
+      const px0 = Math.round(f.x0 * dpr), px1 = Math.round(f.x1 * dpr);
+      const py0 = Math.round(f.y0 * dpr), py1 = Math.round(f.y1 * dpr);
+      const rx = this.cam.x + (px0 - (w * dpr) / 2) / S;
+      const ry = this.cam.y + (py0 - (this.size.h * dpr) / 2) / S;
       ctx.save();
       ctx.beginPath();
-      ctx.rect(0, Math.round((y0 - v.y) * s), this.canvas.width, Math.round((y1 - y0) * s));
+      ctx.rect(px0, py0, px1 - px0, py1 - py0);
       ctx.clip();
-      this.doc.render(ctx, v.x, v.y, v.w, v.h, s, { smooth: this.cam.s < 2 });
+      ctx.translate(px0, py0);
+      this.doc.render(ctx, rx, ry, (px1 - px0) / S, (py1 - py0) / S, S, { smooth: this.cam.s < 2 });
       ctx.restore();
     }
     this.drawOverlay();
@@ -145,17 +167,26 @@ export class Board {
     this.opts.onTool?.overlay?.(o, this);
   }
 
-  /** 地図の座標で描く関数を、画面上に（左右のループも含めて）描く */
+  /** 地図の座標で描く関数を、枠の中に（左右の回り込みも含めて）描く */
   withMapTransform(o, fn) {
     const { dpr } = this.size;
-    const v = this.visibleRect();
+    const s = this.cam.s;
     const W = this.doc.w;
-    for (let k = Math.floor(v.x / W) - 1; k <= Math.floor((v.x + v.w) / W) + 1; k++) {
+    const f = this.frame();
+    if (f.x1 <= f.x0) return;
+    const left = this.cam.x - (this.size.w / 2 - f.x0) / s;   // 枠の左端の地図座標
+    const right = left + (f.x1 - f.x0) / s;
+    o.save();
+    o.beginPath();
+    o.rect(f.x0, 0, f.x1 - f.x0, this.size.h);  // 上下は枠の外にはみ出しても見えるようにする（つまみ・長さの表示）
+    o.clip();
+    for (let k = Math.floor(left / W) - 1; k <= Math.floor(right / W) + 1; k++) {
       o.save();
-      o.setTransform(this.cam.s * dpr, 0, 0, this.cam.s * dpr, (k * W - v.x) * this.cam.s * dpr, (-v.y) * this.cam.s * dpr);
+      o.setTransform(s * dpr, 0, 0, s * dpr, (k * W - this.cam.x) * s * dpr + (this.size.w / 2) * dpr, (-this.cam.y) * s * dpr + (this.size.h / 2) * dpr);
       fn(o, k * W);
       o.restore();
     }
+    o.restore();
   }
 
   /* ---------- 入力 ---------- */
@@ -187,7 +218,11 @@ export class Board {
       }
       if (pts.size > 2) return;
       last = { x: e.clientX, y: e.clientY };
-      const wantsPan = this.handMode || this.spaceDown || e.button === 1 || e.button === 2;
+      // 枠の左右の外側をつかんだときは、描かずに移動にする
+      const f = this.frame();
+      const lx = e.clientX - el.getBoundingClientRect().left;
+      const outside = lx < f.x0 || lx > f.x1;
+      const wantsPan = this.handMode || this.spaceDown || e.button === 1 || e.button === 2 || outside;
       if (wantsPan) { mode = 'pan'; el.classList.add('is-panning'); return; }
       mode = 'tool';
       tool()?.down?.(this.toMap(e.clientX, e.clientY), e, this);
