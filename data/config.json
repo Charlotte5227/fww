@@ -23,14 +23,14 @@
     {
       "id": "mvotd7pxsenwo",
       "name": "国家",
-      "src": "data/images/mvrph0t6v29jz.png",
+      "src": "data/images/mvw8pmf2x2ihk.png",
       "visible": true,
       "opacity": 1
     },
     {
       "id": "mvot6v5mca465",
       "name": "プロビ",
-      "src": "data/images/mvot6v5mo3oo7.png",
+      "src": "data/images/mvw8pr5wzpy4j.png",
       "visible": true,
       "opacity": 1
     },
@@ -51,7 +51,7 @@
     {
       "id": "mvot9bwdj6nj4",
       "name": "国名",
-      "src": "data/images/mvt266wv2u0ez.png",
+      "src": "data/images/mvw8pwnibrif6.png",
       "visible": true,
       "opacity": 1
     }
@@ -70,5 +70,8 @@
   },
   "discord": {
     "workerUrl": "https://snowy-fire-cc6b.h-kanato-1019.workers.dev"
+  },
+  "features": {
+    "draw-discord": false
   }
 }
