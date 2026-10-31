@@ -35,6 +35,13 @@
       "opacity": 1
     },
     {
+      "id": "mvwbqfm43vhyn",
+      "name": "首都",
+      "src": "data/images/mvwbqfm4mhls1.png",
+      "visible": false,
+      "opacity": 1
+    },
+    {
       "id": "mvot7gdl4f53w",
       "name": "空域",
       "src": "data/images/mvot7gdlz2uoy.png",

@@ -2,6 +2,97 @@
   "version": 2,
   "entries": [
     {
+      "id": "mvwbri0kekpfp",
+      "date": "2026-10-31",
+      "time": "20:35",
+      "savedAt": "2026-10-31T11:35:38.996Z",
+      "memo": "No-4.1",
+      "config": {
+        "version": 1,
+        "title": "FWW世界地図",
+        "base": {
+          "name": "1000003303",
+          "src": "data/images/mvqwghm882asu.png"
+        },
+        "layers": [
+          {
+            "id": "mvot6b5uaznt5",
+            "name": "白地",
+            "src": "data/images/mvota01dqwemr.png",
+            "visible": true,
+            "opacity": 1
+          },
+          {
+            "id": "mvow7uta9qt8h",
+            "name": "地形",
+            "src": "data/images/mvow7ut9rwkum.png",
+            "visible": false,
+            "opacity": 1
+          },
+          {
+            "id": "mvotd7pxsenwo",
+            "name": "国家",
+            "src": "data/images/mvw8pmf2x2ihk.png",
+            "visible": true,
+            "opacity": 1
+          },
+          {
+            "id": "mvot6v5mca465",
+            "name": "プロビ",
+            "src": "data/images/mvw8pr5wzpy4j.png",
+            "visible": true,
+            "opacity": 1
+          },
+          {
+            "id": "mvwbqfm43vhyn",
+            "name": "首都",
+            "src": "data/images/mvwbqfm4mhls1.png",
+            "visible": false,
+            "opacity": 1
+          },
+          {
+            "id": "mvot7gdl4f53w",
+            "name": "空域",
+            "src": "data/images/mvot7gdlz2uoy.png",
+            "visible": false,
+            "opacity": 1
+          },
+          {
+            "id": "mvot8qaz85cmh",
+            "name": "海域",
+            "src": "data/images/mvotrezvhbpp4.png",
+            "visible": false,
+            "opacity": 1
+          },
+          {
+            "id": "mvot9bwdj6nj4",
+            "name": "国名",
+            "src": "data/images/mvw8pwnibrif6.png",
+            "visible": true,
+            "opacity": 1
+          }
+        ],
+        "background": {
+          "src": "data/images/mvotuoy3ulbtr.png",
+          "color": "#141a2e",
+          "fit": "cover"
+        },
+        "display": {
+          "defaultMode": "flat",
+          "autoRotate": false,
+          "rotateSpeed": 6,
+          "shading": 0.55,
+          "startAngle": 180
+        },
+        "discord": {
+          "workerUrl": "https://snowy-fire-cc6b.h-kanato-1019.workers.dev"
+        },
+        "features": {
+          "draw-discord": false
+        }
+      }
+    },
+    {
       "id": "mvw8qhsh5ewxl",
       "date": "2026-10-31",
       "time": "19:10",
