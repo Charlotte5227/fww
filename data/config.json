@@ -23,7 +23,7 @@
     {
       "id": "mvotd7pxsenwo",
       "name": "国家",
-      "src": "data/images/mvw8pmf2x2ihk.png",
+      "src": "data/images/mvxnfsyhjj0ua.png",
       "visible": true,
       "opacity": 1
     },
@@ -32,13 +32,6 @@
       "name": "プロビ",
       "src": "data/images/mvw8pr5wzpy4j.png",
       "visible": true,
-      "opacity": 1
-    },
-    {
-      "id": "mvwbqfm43vhyn",
-      "name": "首都",
-      "src": "data/images/mvwbqfm4mhls1.png",
-      "visible": false,
       "opacity": 1
     },
     {
@@ -58,7 +51,7 @@
     {
       "id": "mvot9bwdj6nj4",
       "name": "国名",
-      "src": "data/images/mvw8pwnibrif6.png",
+      "src": "data/images/mvxnfozkrtkgc.png",
       "visible": true,
       "opacity": 1
     }
