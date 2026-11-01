@@ -5,7 +5,7 @@
       "id": "mvxnfx336dxyp",
       "date": "2026-11-01",
       "time": "18:50",
-      "savedAt": "2026-11-01T09:50:20.223Z",
+      "savedAt": "2026-11-01T09:55:43.729Z",
       "memo": "No-5",
       "config": {
         "version": 1,
@@ -41,6 +41,13 @@
             "name": "プロビ",
             "src": "data/images/mvw8pr5wzpy4j.png",
             "visible": true,
+            "opacity": 1
+          },
+          {
+            "id": "mvxnmc8f85xx2",
+            "name": "首都",
+            "src": "data/images/mvxnmc8ec39p3.png",
+            "visible": false,
             "opacity": 1
           },
           {
