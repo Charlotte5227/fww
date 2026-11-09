@@ -236,7 +236,9 @@ function menu(data, st) {
       { type: 2, style: 1, custom_id: 'make', label: sending.length > 1 ? `地図を作る（${sending.length}枚）` : '地図を作る' },
       { type: 2, style: 2, custom_id: 'add', label: '組み合わせを追加', disabled: sets.length >= MAX_SETS - 1 },
       ...(options.length ? [{ type: 2, style: 2, custom_id: `op:${encodeOps(ops)}`, label: '透明度…' }] : []),
-      { type: 2, style: st.priv ? 3 : 2, custom_id: `priv:${st.priv ? 1 : 0}`, label: `${st.priv ? '✅' : '⬜'} 自分だけに表示` },
+      data.locked
+        ? { type: 2, style: 2, custom_id: 'priv:1', label: '🔒 自分だけに表示', disabled: true }
+        : { type: 2, style: st.priv ? 3 : 2, custom_id: `priv:${st.priv ? 1 : 0}`, label: `${st.priv ? '✅' : '⬜'} 自分だけに表示` },
     ],
   });
   rows.push({
@@ -247,6 +249,7 @@ function menu(data, st) {
         { type: 2, style: 2, custom_id: 'def', label: '初期表示に戻す' },
       ] : []),
       { type: 2, style: 4, custom_id: 'clear', label: '組み合わせを空にする', disabled: !sets.length },
+      { type: 2, style: 2, custom_id: 'pp', label: '⭐ プリセット' },
       { type: 2, style: 2, custom_id: 'help:menu', label: '❓ 使い方' },
     ],
   });
@@ -279,7 +282,8 @@ function menu(data, st) {
   }
   const changed = Object.keys(ops).map((i) => `${layers[i].name} ${ops[i]}%`);
   lines.push(`**透明度**：${changed.length ? changed.join('・') : '管理ページの設定のまま'}`);
-  lines.push(`**送り先**：${st.priv ? '自分だけ（ほかの人には見えません）' : 'チャンネルの全員'}`);
+  if (data.locked) lines.push('**送り先**：自分だけ（このサーバーでは、全員に見える地図を作る許可がありません）');
+  else lines.push(`**送り先**：${st.priv ? '自分だけ（ほかの人には見えません）' : 'チャンネルの全員'}`);
   return { content: lines.join('\n').slice(0, 2000), flags: 64, allowed_mentions: { parse: [] }, components: rows };
 }
 
@@ -307,6 +311,192 @@ function opacityModal(st) {
       }],
     },
   };
+}
+
+/* ---------- プリセット（自分用の組み合わせ） ----------
+ * メニューで作った組み合わせ（レイヤー・日付・透明度・まとめて送る組み合わせ）に名前を付けて保存し、
+ * あとから呼び出せる。保存先は Cloudflare の KV（SETTINGS）で、人ごと（どのサーバーでも同じ）。
+ * レイヤーは名前で、日付は「最新」か記録の ID で覚える（最新で保存したものは、呼び出した時点の最新になる）。
+ */
+const MAX_PRESETS = 25;  // 選択欄に並べられる数
+const PRESET_NAME_MAX = 40;
+const userIdOf = (interaction) => (interaction.member?.user || interaction.user || {}).id;
+const presetKey = (uid) => `presets:${uid}`;
+
+async function getPresets(env, uid) {
+  return (await env.SETTINGS.get(presetKey(uid), 'json')) || [];
+}
+const putPresets = (env, uid, list) => env.SETTINGS.put(presetKey(uid), JSON.stringify(list));
+
+/** メニューの状態 → プリセットの形（名前で覚える） */
+function stateToPreset(st) {
+  const layers = st.v.config.layers || [];
+  return {
+    sets: setsToSend(st).map((s) => ({ date: s.v.key, layers: namesOf(s.v, s.idx) })),
+    ops: Object.fromEntries(Object.entries(st.ops).map(([i, val]) => [layers[i]?.name, val]).filter(([n]) => n)),
+    priv: !!st.priv,
+  };
+}
+
+/** プリセットの形 → メニューの状態。見つからなかったものは notes に */
+function presetToState(data, p) {
+  const notes = [];
+  const missingLayers = new Set();
+  let missingDate = false;
+  const list = (p.sets || []).slice(0, MAX_SETS).map((s) => {
+    const found = data.versions.find((v) => v.key === (s.date || 'latest'));
+    if (!found) missingDate = true;
+    const v = found || data.versions[0];
+    const names = (v.config.layers || []).map((l) => l.name);
+    const idx = [];
+    for (const n of s.layers || []) {
+      const i = names.indexOf(n);
+      if (i >= 0) idx.push(i); else missingLayers.add(n);
+    }
+    return { v, idx };
+  });
+  if (!list.length) list.push({ v: data.versions[0], idx: defaultIndexes(data.versions[0].config) });
+  const cur = list[list.length - 1];
+  const layers = cur.v.config.layers || [];
+  const ops = {};
+  for (const [n, val] of Object.entries(p.ops || {})) {
+    const i = layers.findIndex((l) => l.name === n);
+    if (i >= 0) ops[i] = val;
+  }
+  if (missingLayers.size) notes.push(`今の地図にないレイヤーは外しました：${[...missingLayers].join('、')}`);
+  if (missingDate) notes.push('見つからない日付の記録があったため、その分は最新の地図にしました。');
+  return { st: { v: cur.v, sel: cur.idx, sets: list.slice(0, -1), ops, priv: !!p.priv }, notes };
+}
+
+/** 一覧に出す説明（例：「国家・地形（最新）ほか 2 枚・透明度あり」） */
+function presetSummary(p) {
+  const first = p.sets?.[0];
+  const one = first ? `${first.layers.join('・') || '下地だけ'}（${first.date && first.date !== 'latest' ? '過去の地図' : '最新'}）` : '';
+  const more = (p.sets?.length || 0) > 1 ? `ほか ${p.sets.length - 1} 枚` : '';
+  const op = Object.keys(p.ops || {}).length ? '透明度あり' : '';
+  return [one, more, op].filter(Boolean).join('・').slice(0, 100) || '（中身なし）';
+}
+
+/** プリセットの画面（メニューと入れ替えて表示する）。stash はメニューの状態を一時的に置いた場所の番号 */
+function presetPage(presets, stash, { note = '', mode = 'load' } = {}) {
+  const rows = [];
+  if (presets.length) {
+    rows.push({
+      type: 1,
+      components: [{
+        type: 3,
+        custom_id: mode === 'del' ? `pp:del:${stash}` : `pp:load:${stash}`,
+        placeholder: mode === 'del' ? '消すプリセットを選ぶ（複数可）' : '呼び出すプリセットを選ぶ',
+        min_values: 1,
+        max_values: mode === 'del' ? presets.length : 1,
+        options: presets.map((p, i) => ({ label: `${p.name}`.slice(0, 100), description: presetSummary(p), value: String(i) })),
+      }],
+    });
+  }
+  rows.push({
+    type: 1,
+    components: [
+      { type: 2, style: 1, custom_id: `pp:save:${stash}`, label: '今の組み合わせを保存…' },
+      mode === 'del'
+        ? { type: 2, style: 2, custom_id: `pp:page:${stash}`, label: '消すのをやめる' }
+        : { type: 2, style: 4, custom_id: `pp:delmode:${stash}`, label: 'プリセットを消す…', disabled: !presets.length },
+      { type: 2, style: 2, custom_id: `pp:back:${stash}`, label: '← メニューに戻る' },
+    ],
+  });
+  const lines = [
+    '**⭐ プリセット**（あなた専用。どのサーバーでも呼び出せます）',
+    'レイヤー・日付・透明度・まとめて送る組み合わせ・「自分だけに表示」を、名前を付けて保存できます。',
+    '「最新」で保存したものは、呼び出したときの最新の地図になります。過去の日付で保存したものは、その日の地図のままです。',
+    '',
+    presets.length ? `保存しているプリセット：${presets.length} / ${MAX_PRESETS}` : 'まだプリセットはありません。「今の組み合わせを保存…」から作れます。',
+  ];
+  if (mode === 'del') lines.push('', '⚠ 選んだプリセットはすぐに消えます（元に戻せません）。');
+  return { content: (note ? `${note}\n\n` : '') + lines.join('\n'), flags: 64, allowed_mentions: { parse: [] }, components: rows };
+}
+
+const presetNameModal = (stash) => ({
+  type: 9,
+  data: {
+    custom_id: `pp:name:${stash}`,
+    title: 'プリセットとして保存',
+    components: [{
+      type: 1,
+      components: [{ type: 4, custom_id: 'name', style: 1, label: `名前（${PRESET_NAME_MAX}文字まで・同じ名前は上書き）`, min_length: 1, max_length: PRESET_NAME_MAX, required: true, placeholder: '例：国境と地形' }],
+    }],
+  },
+});
+
+/** メニューの状態を一時的に置く（プリセットの画面から戻る・保存するため。30 分で消える） */
+async function stashState(env, uid, st) {
+  const id = Math.random().toString(36).slice(2, 10);
+  await env.SETTINGS.put(`pstash:${uid}:${id}`, JSON.stringify(stateToPreset(st)), { expirationTtl: 1800 });
+  return id;
+}
+const readStash = (env, uid, id) => env.SETTINGS.get(`pstash:${uid}:${id}`, 'json');
+
+/** プリセットまわりの操作。対応しないものは null */
+async function presetAction(env, data, interaction) {
+  const id = String(interaction.data?.custom_id || '');
+  if (id !== 'pp' && !id.startsWith('pp:')) return null;
+  if (!env.SETTINGS) return ephemeral('プリセットを使うには、Cloudflare の Worker に KV（SETTINGS）を設定してください（管理している人に伝えてください）。');
+  const uid = userIdOf(interaction);
+  const menuFrom = async (stash, note) => {
+    const saved = stash && await readStash(env, uid, stash);
+    const st = saved ? presetToState(data, saved).st : { v: data.versions[0], sel: defaultIndexes(data.versions[0].config), ops: {}, sets: [], priv: false };
+    const m = menu(data, st);
+    const n = [note, saved ? '' : '（時間がたったため、メニューを最初の状態で開き直しました）'].filter(Boolean).join('\n');
+    if (n) m.content = `${n}\n\n${m.content}`;
+    return json({ type: 7, data: m });
+  };
+
+  // メニューの「⭐ プリセット」：今の状態を置いて、プリセットの画面へ
+  if (id === 'pp') {
+    const st = readState(data, interaction);
+    const stash = await stashState(env, uid, st);
+    return json({ type: 7, data: presetPage(await getPresets(env, uid), stash) });
+  }
+  const [, act, stash] = id.split(':');
+  if (act === 'back') return menuFrom(stash);
+  if (act === 'page') return json({ type: 7, data: presetPage(await getPresets(env, uid), stash) });
+  if (act === 'delmode') return json({ type: 7, data: presetPage(await getPresets(env, uid), stash, { mode: 'del' }) });
+  if (act === 'save') {
+    if (!(await readStash(env, uid, stash))) return menuFrom('', '⚠ 時間がたったため、保存する組み合わせを読み直せませんでした。もう一度選んでから保存してください。');
+    return json(presetNameModal(stash));
+  }
+  if (act === 'name') {  // 名前の入力（モーダル）
+    const saved = await readStash(env, uid, stash);
+    const comp = interaction.data.components?.[0];
+    const name = String(comp?.components?.[0]?.value ?? comp?.component?.value ?? '').trim().slice(0, PRESET_NAME_MAX);
+    const list = await getPresets(env, uid);
+    if (!saved) return json({ type: 7, data: presetPage(list, stash, { note: '⚠ 時間がたったため保存できませんでした。メニューに戻って、もう一度お試しください。' }) });
+    if (!name) return json({ type: 7, data: presetPage(list, stash, { note: '⚠ 名前を入れてください。' }) });
+    const i = list.findIndex((p) => p.name === name);
+    if (i < 0 && list.length >= MAX_PRESETS) {
+      return json({ type: 7, data: presetPage(list, stash, { note: `⚠ プリセットは ${MAX_PRESETS} 個までです。いらないものを消してから保存してください（同じ名前なら上書きできます）。` }) });
+    }
+    const p = { name, ...saved, at: Date.now() };
+    if (i >= 0) list[i] = p; else list.push(p);
+    await putPresets(env, uid, list);
+    return json({ type: 7, data: presetPage(list, stash, { note: `✅「${name}」を${i >= 0 ? '上書き' : '保存'}しました。` }) });
+  }
+  if (act === 'load') {
+    const list = await getPresets(env, uid);
+    const p = list[Number(interaction.data.values?.[0])];
+    if (!p) return json({ type: 7, data: presetPage(list, stash, { note: '⚠ そのプリセットが見つかりませんでした。' }) });
+    const { st, notes } = presetToState(data, p);
+    const m = menu(data, st);
+    m.content = `⭐「${p.name}」を呼び出しました。このまま「地図を作る」を押すと作れます。${notes.length ? `\n⚠ ${notes.join('\n⚠ ')}` : ''}\n\n${m.content}`;
+    return json({ type: 7, data: m });
+  }
+  if (act === 'del') {
+    const drop = new Set((interaction.data.values || []).map(Number));
+    const list = await getPresets(env, uid);
+    const names = list.filter((_, i) => drop.has(i)).map((p) => `「${p.name}」`);
+    const rest = list.filter((_, i) => !drop.has(i));
+    await putPresets(env, uid, rest);
+    return json({ type: 7, data: presetPage(rest, stash, { note: `🗑 ${names.join('')}を消しました。` }) });
+  }
+  return null;
 }
 
 /* ---------- 使い方（ヘルプ） ---------- */
@@ -378,6 +568,13 @@ const HELP = [
       '・組み合わせには、追加したときの日付が付きます。「① 白地・国家（10/26 15:46）」のように表示されます。',
       '・いらない組み合わせは、いちばん下の「取っておいた組み合わせを外す」で選んで外せます。',
       '・透明度は、まとめて送る地図すべてに同じ値が使われます。',
+      '',
+      '**⭐ プリセット**（よく使う組み合わせを保存）',
+      '・メニューの「⭐ プリセット」→「今の組み合わせを保存…」で、名前を付けて保存できます（ひとり 25 個まで）。',
+      '・保存されるのは、レイヤー・日付・透明度・まとめて送る組み合わせ・「自分だけに表示」です。',
+      '・「⭐ プリセット」の一覧から選ぶと、その組み合わせでメニューが開き直されます。あとは「地図を作る」を押すだけです。',
+      '・「最新」で保存したものは呼び出したときの最新の地図、過去の日付で保存したものはその日の地図になります。',
+      '・プリセットはあなた専用です。ほかの人には見えず、どのサーバーでも呼び出せます。',
     ],
   },
   {
@@ -424,6 +621,7 @@ const HELP = [
       '・メニューの「送り先」の行で、今どちらになっているか確認できます。',
       '・自分だけの地図は、Discord の仕組み上、時間がたつと（またはアプリを開き直すと）消えることがあります。残したい地図は保存してください。',
       '・メニューとこの使い方は、いつも自分にだけ見えます。',
+      '・サーバーによっては、全員に見える地図を作れる人が決められています。許可がないときは「🔒 自分だけに表示」に固定され、地図は自分にだけ届きます。',
     ],
   },
   {
@@ -646,6 +844,9 @@ const DEFAULT_SETTINGS = {
   freeChoice: true,        // 送る人がチャンネルを自由に選べるか（false なら下の一覧と初期チャンネルだけ）
   allowedChannels: [],     // 自由選択を許可しないときに選べるチャンネル
   sendMode: 'admins',      // 送れる人：admins（管理者だけ）| all | roles | users
+  genMode: 'all',          // /地図 で「全員に見える地図」を作れる人：all | admins | some（下のロール・アカウント）
+  genRoles: [],
+  genUsers: [],
   sendRoles: [],
   sendUsers: [],
   adminRoles: [],          // 管理メニューを使える人（サーバー管理者のほかに）
@@ -671,6 +872,26 @@ function canSendBySettings(s, member, perms) {
   if (s.sendMode === 'roles') return (member.roles || []).some((r) => s.sendRoles.includes(r));
   if (s.sendMode === 'users') return s.sendUsers.includes(member.user?.id);
   return false;
+}
+
+/** /地図 で全員に見える地図を作ってよいか（だめなら「自分だけに表示」だけ） */
+function canMakePublic(s, member, perms) {
+  if (s.genMode !== 'admins' && s.genMode !== 'some') return true;
+  if (isAdminMember(s, member, perms)) return true;
+  if (s.genMode === 'some') return (member.roles || []).some((r) => s.genRoles.includes(r)) || s.genUsers.includes(member.user?.id);
+  return false;
+}
+
+/** この操作をした人が、全員に見える地図を作れないか（サーバーの外や、設定を読めないときは制限しない） */
+async function publicLocked(env, interaction) {
+  if (!interaction.guild_id || !env.SETTINGS || !interaction.member) return false;
+  try {
+    const s = await getSettings(env, interaction.guild_id);
+    const perms = (() => { try { return BigInt(interaction.member.permissions || '0'); } catch { return 0n; } })();
+    return !canMakePublic(s, interaction.member, perms);
+  } catch {
+    return false;
+  }
 }
 
 /* ---------- お絵かきページ向け：CORS とログイン ---------- */
@@ -905,6 +1126,20 @@ const SEND_MODES = [
   ['users', 'アカウントで指定', '選んだ人と管理者が送れます'],
 ];
 
+const GEN_MODES = [
+  ['all', '全員', 'だれでも全員に見える地図を作れます（最初の設定）'],
+  ['admins', '管理者だけ', '管理メニューを使える人だけ。ほかの人は自分にだけ見える地図になります'],
+  ['some', 'ロール・アカウントで指定', '選んだロール・アカウントの人と管理者だけ'],
+];
+function genText(s) {
+  if (s.genMode === 'admins') return '管理者だけ';
+  if (s.genMode === 'some') {
+    const parts = [s.genRoles.length ? `ロール：${s.genRoles.map((id) => `<@&${id}>`).join(' ')}` : '', s.genUsers.length ? `アカウント：${s.genUsers.map((id) => `<@${id}>`).join(' ')}` : ''].filter(Boolean);
+    return `${parts.join('／') || '（まだ選ばれていません）'}（と管理者）`;
+  }
+  return '全員';
+}
+
 const list = (ids, f, none = 'なし') => (ids.length ? ids.map(f).join(' ') : none);
 const roleM = (id) => `<@&${id}>`;
 const userM = (id) => `<@${id}>`;
@@ -933,6 +1168,10 @@ const ADMIN_HELP = [
   '・送れる人：管理者だけ（最初の設定）／全員／ロールで指定／アカウントで指定。管理メニューを使える人は、いつでも送れます。',
   '・送る人は、Discord でログインして送ります。その人が書き込めないチャンネルや、Bot が見られないチャンネルには送れません。同じ人が送れるのは 30 秒に 1 回です。',
   '・送られる画像には本文がなく、ファイル名が「月-日-時分秒_DiscordID-送った人のID.png」になります。',
+  '',
+  '**地図を作る（/地図）の設定**',
+  '・全員に見える地図を作れる人を、全員（最初の設定）／管理者だけ／ロール・アカウントで指定 から選べます。',
+  '・許可のない人も /地図 は使えますが、作った地図は自分にだけ見える形で届きます（メニューの「自分だけに表示」が 🔒 で固定されます）。',
   '',
   '**管理者の設定**',
   '・サーバーの管理者権限を持つ人（とサーバーの持ち主）は、いつでもこのメニューを使えます。',
@@ -966,6 +1205,20 @@ function adminPage(s, page, note = '') {
       ? '✅ 許可（送る人が、自分と Bot が書き込めるチャンネルから自由に選べます）'
       : `⛔ 許可しない（選べるのは ${list(fixedChannels(s), chM, '（まだ選ばれていません）')} だけ）`;
     return { content: `${head}**📤 送信の設定**\n初期チャンネル：${chM(s.defaultChannel)}\n送れる人：${senderText(s)}\nチャンネルの自由選択：${choice}`, components: rows };
+  }
+  if (page === 'gen') {
+    const rows = [
+      row({ type: 3, custom_id: 'as:gmode', placeholder: '全員に見える地図を作れる人', options: GEN_MODES.map(([value, label, description]) => ({ value, label, description, default: (s.genMode || 'all') === value })) }),
+    ];
+    if (s.genMode === 'some') {
+      rows.push(row({ type: 6, custom_id: 'as:groles', placeholder: '作れるロールを選ぶ（複数可）', min_values: 0, max_values: 25, default_values: s.genRoles.map((id) => ({ id, type: 'role' })) }));
+      rows.push(row({ type: 5, custom_id: 'as:gusers', placeholder: '作れる人を選ぶ（複数可）', min_values: 0, max_values: 25, default_values: s.genUsers.map((id) => ({ id, type: 'user' })) }));
+    }
+    rows.push(backRow());
+    return {
+      content: `${head}**🗺 地図を作る（/地図）の設定**\n全員に見える地図を作れる人：${genText(s)}\nそれ以外の人は、/地図 を使えますが、作った地図は**自分にだけ見える**形で届きます。`,
+      components: rows,
+    };
   }
   if (page === 'admins') {
     return {
@@ -1003,6 +1256,7 @@ function adminPage(s, page, note = '') {
       `送れる人：${senderText(s)}`,
       `管理メニューを使える人：サーバー管理者${s.adminRoles.length ? `、${list(s.adminRoles, roleM)}` : ''}${s.adminUsers.length ? `、${list(s.adminUsers, userM)}` : ''}`,
       `パスワード：${s.pw ? '設定済み' : '未設定'}`,
+      `全員に見える地図を作れる人（/地図）：${genText(s)}`,
     ].join('\n'),
     components: [
       row(
@@ -1012,6 +1266,7 @@ function adminPage(s, page, note = '') {
         btn('as:page:pass', '🔑 パスワード・記録'),
         btn('as:page:help', '❓ 説明'),
       ),
+      row(btn('as:page:gen', '🗺 地図を作る（/地図）の設定')),
     ],
   };
 }
@@ -1093,6 +1348,9 @@ async function adminComponent(env, interaction) {
     return save('send', s.freeChoice ? '✅ チャンネルの自由選択を許可しました。' : '⛔ チャンネルの自由選択を止めました。下の欄で、送り先に選べるチャンネルを選んでください（初期チャンネルも選べます）。');
   }
   if (id === 'as:allowch') { s.allowedChannels = values; return save('send', '✅ 送り先に選べるチャンネルを変更しました。'); }
+  if (id === 'as:gmode') { s.genMode = GEN_MODES.some(([v]) => v === values[0]) ? values[0] : 'all'; return save('gen', '✅ 全員に見える地図を作れる人を変更しました。'); }
+  if (id === 'as:groles') { s.genRoles = values; return save('gen', '✅ 地図を作れるロールを変更しました。'); }
+  if (id === 'as:gusers') { s.genUsers = values; return save('gen', '✅ 地図を作れる人を変更しました。'); }
   if (id === 'as:notify') { s.notifyChannel = values[0] || ''; return save('pass', '✅ 通知先を変更しました。'); }
   if (id === 'as:pw') return json(pwModal());
   if (id === 'as:pwoff') { s.pw = null; return save('pass', '✅ パスワードをなくしました。パスワードでは開けなくなります。'); }
@@ -1150,7 +1408,9 @@ export default {
       if (interaction.type === 3 && String(interaction.data?.custom_id || '').startsWith('as:')) return await adminComponent(env, interaction);
       if (interaction.type === 5 && interaction.data?.custom_id === 'as:pwmodal') return await adminModal(env, interaction);
 
-      const data = await loadData(env);
+      // data はほかの操作と共有しているので、この操作だけの値はコピーに付ける
+      const data = { ...(await loadData(env)) };
+      if (interaction.type === 2 || interaction.type === 3 || interaction.type === 5) data.locked = await publicLocked(env, interaction);
 
       if (interaction.type === 2 && interaction.data?.name === 'map') {
         const topic = optionValue(interaction.data, 'help');
@@ -1159,6 +1419,12 @@ export default {
         // /地図 → 選択メニュー（自分にだけ見える）
         const v = data.versions[0];
         return json({ type: 4, data: menu(data, { v, sel: defaultIndexes(v.config), ops: {}, sets: [], priv: false }) });
+      }
+
+      // プリセット（⭐ ボタン・プリセットの画面・名前の入力）
+      if (interaction.type === 3 || interaction.type === 5) {
+        const r = await presetAction(env, data, interaction);
+        if (r) return r;
       }
 
       if (interaction.type === 5 && interaction.data?.custom_id === 'opmodal') { // 透明度の入力
@@ -1214,7 +1480,7 @@ export default {
           return json({ type: 7, data: menu(data, { ...st, sets: st.sets.filter((_, i) => !drop.has(i)) }) });
         }
         if (id === 'clear') return json({ type: 7, data: menu(data, { ...st, sets: [] }) });
-        if (id.startsWith('priv:')) return json({ type: 7, data: menu(data, { ...st, priv: !st.priv }) });
+        if (id.startsWith('priv:')) return json({ type: 7, data: menu(data, { ...st, priv: data.locked ? true : !st.priv }) });
         if (id.startsWith('op:')) return json(opacityModal(st));
         if (id === 'make') {
           const list = setsToSend(st);
@@ -1225,10 +1491,10 @@ export default {
             sets: list.map((s) => ({ names: namesOf(s.v, s.idx), date: s.v.date ? s.v.key : '' })),
             opacity,
             label: who ? `${who} さんの選択` : '選択メニュー',
-            priv: st.priv,
+            priv: st.priv || data.locked,
           }));
           // メニューはそのまま残し、地図は新しい投稿として送る
-          return deferred(st.priv);
+          return deferred(st.priv || data.locked);
         }
       }
     } catch (e) {
