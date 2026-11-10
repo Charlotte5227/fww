@@ -35,9 +35,23 @@
       "opacity": 1
     },
     {
-      "id": "mvxnmc8f85xx2",
-      "name": "首都",
-      "src": "data/images/mvxnmc8ec39p3.png",
+      "id": "mwav3etxm2bdy",
+      "name": "陣営",
+      "src": "data/images/mwav3etxp9gs9.png",
+      "visible": false,
+      "opacity": 1
+    },
+    {
+      "id": "mwav30rvsmibe",
+      "name": "陣営無所属",
+      "src": "data/images/mwav30rvho016.png",
+      "visible": false,
+      "opacity": 1
+    },
+    {
+      "id": "mwav2hmm9ugqe",
+      "name": "陣営名",
+      "src": "data/images/mwav2hmmuuptr.png",
       "visible": false,
       "opacity": 1
     },
