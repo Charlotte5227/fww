@@ -23,7 +23,7 @@
     {
       "id": "mvotd7pxsenwo",
       "name": "国家",
-      "src": "data/images/mwe3sc5q9pl25.png",
+      "src": "data/images/mwf2ggis13pil.png",
       "visible": true,
       "opacity": 1
     },
@@ -44,7 +44,7 @@
     {
       "id": "mwav30rvsmibe",
       "name": "陣営無所属",
-      "src": "data/images/mwav30rvho016.png",
+      "src": "data/images/mwf2gc30cu7pe.png",
       "visible": false,
       "opacity": 1
     },
@@ -72,7 +72,7 @@
     {
       "id": "mvot9bwdj6nj4",
       "name": "国名",
-      "src": "data/images/mwe3dr4i4x8do.png",
+      "src": "data/images/mwf2g4ndkx9sp.png",
       "visible": true,
       "opacity": 1
     }
